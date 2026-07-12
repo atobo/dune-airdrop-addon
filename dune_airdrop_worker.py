@@ -51,11 +51,11 @@ def run_playtime_tick():
             if interval_min < 1:
                 interval_min = 60
 
-            # 2. Fetch all online players from dune.player_state
+            # 2. Fetch all online players from dune.player_state (casting connection status ENUM to TEXT)
             cur.execute("""
                 SELECT player_pawn_id, account_id, character_name 
                 FROM dune.player_state 
-                WHERE LOWER(online_status) = 'online' OR LOWER(online_status) = 'true';
+                WHERE LOWER(online_status::text) = 'online' OR LOWER(online_status::text) = 'true';
             """)
             online_players = cur.fetchall()
 
