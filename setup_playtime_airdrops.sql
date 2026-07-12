@@ -486,9 +486,9 @@ BEGIN
           WHERE character_id = NEW.id;
         END IF;
       ELSE
-        -- Initialize playtime record for new character
+        -- Initialize playtime record for new character, backdating last_active_at by 5 seconds to jumpstart tracking delta
         INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_x, last_y, last_z, last_active_at)
-        VALUES (NEW.id, 0, v_curr_xp, v_x, v_y, v_z, CURRENT_TIMESTAMP);
+        VALUES (NEW.id, 0, v_curr_xp, v_x, v_y, v_z, CURRENT_TIMESTAMP - INTERVAL '5 seconds');
       END IF;
     ELSE
       -- Player went offline, invalidate active timestamp to prevent counting while offline
