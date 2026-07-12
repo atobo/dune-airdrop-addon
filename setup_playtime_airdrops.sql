@@ -389,46 +389,51 @@ DECLARE
   v_xp_diff BIGINT;
   v_is_active BOOLEAN := FALSE;
   v_accumulated_seconds INT;
-BEGIN
-  -- Only track if player's online status is 'online' or 'true'
-  IF NEW.online_status IS NOT NULL AND (LOWER(NEW.online_status::text) = 'online' OR LOWER(NEW.online_status::text) = 'true') THEN
-    -- Load configurations
-    SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
-    IF v_config IS NOT NULL THEN
-      v_playtime_enabled := COALESCE((v_config->>'playtime_enabled')::boolean, TRUE);
-      v_interval_min := COALESCE((v_config->>'playtime_interval')::int, 60);
-      v_min_dist := COALESCE((v_config->>'playtime_distance')::double precision, 0.0);
-      v_min_xp := COALESCE((v_config->>'playtime_xp')::int, 0);
-    END IF;
-    IF v_interval_min < 1 THEN v_interval_min := 60; END IF;
-
-    -- Handle daily/weekly login claims instantly on online save
-    PERFORM dune.fn_check_daily_weekly_rewards(NEW.account_id, NEW.player_pawn_id);
-
-    -- Fetch current coordinates and XP
-    SELECT 
-      COALESCE((fe.components->'FLevelComponent'->1->>'TotalXPEarned')::bigint, 0)
-    INTO v_curr_xp
-    FROM dune.actor_fgl_entities afe
-    LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
-    WHERE afe.actor_id = NEW.player_pawn_id AND afe.slot_name = 'DuneCharacter'
+  -- Fetch player state online status and account_id
+  DECLARE
+    v_online TEXT;
+    v_account_id BIGINT;
+  BEGIN
+    SELECT online_status, account_id INTO v_online, v_account_id 
+    FROM dune.player_state 
+    WHERE player_pawn_id = NEW.id 
     LIMIT 1;
 
-    -- Extract translation coordinates safely
-    IF NEW.player_pawn_id IS NOT NULL THEN
-      SELECT 
-        (transform[1])::double precision, 
-        (transform[2])::double precision, 
-        (transform[3])::double precision
-      INTO v_x, v_y, v_z
-      FROM dune.actors 
-      WHERE id = NEW.player_pawn_id;
-    END IF;
+    -- Only track if player's online status is 'online' or 'true'
+    IF v_online IS NOT NULL AND (LOWER(v_online) = 'online' OR LOWER(v_online) = 'true') THEN
+      -- Load configurations
+      SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
+      IF v_config IS NOT NULL THEN
+        v_playtime_enabled := COALESCE((v_config->>'playtime_enabled')::boolean, TRUE);
+        v_interval_min := COALESCE((v_config->>'playtime_interval')::int, 60);
+        v_min_dist := COALESCE((v_config->>'playtime_distance')::double precision, 0.0);
+        v_min_xp := COALESCE((v_config->>'playtime_xp')::int, 0);
+      END IF;
+      IF v_interval_min < 1 THEN v_interval_min := 60; END IF;
 
-    -- Get previous active status
-    SELECT * INTO v_track 
-    FROM dune.bot_active_playtime 
-    WHERE character_id = NEW.player_pawn_id;
+      -- Handle daily/weekly login claims instantly on online save
+      PERFORM dune.fn_check_daily_weekly_rewards(v_account_id, NEW.id);
+
+      -- Fetch current XP
+      SELECT 
+        COALESCE((fe.components->'FLevelComponent'->1->>'TotalXPEarned')::bigint, 0)
+      INTO v_curr_xp
+      FROM dune.actor_fgl_entities afe
+      LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
+      WHERE afe.actor_id = NEW.id AND afe.slot_name = 'DuneCharacter'
+      LIMIT 1;
+
+      -- Extract translation coordinates safely from transform array
+      IF NEW.transform IS NOT NULL THEN
+        v_x := (NEW.transform[1])::double precision;
+        v_y := (NEW.transform[2])::double precision;
+        v_z := (NEW.transform[3])::double precision;
+      END IF;
+
+      -- Get previous active status
+      SELECT * INTO v_track 
+      FROM dune.bot_active_playtime 
+      WHERE character_id = NEW.id;
     
     IF v_track.character_id IS NOT NULL THEN
       -- Calculate seconds passed since last save/update
@@ -453,7 +458,7 @@ BEGIN
           -- Check if playtime threshold is achieved (and playtime airdrops are enabled)
           IF v_playtime_enabled AND v_accumulated_seconds >= (v_interval_min * 60) THEN
             -- Roll reward pack
-            PERFORM dune.fn_roll_playtime_reward(NEW.account_id, NEW.player_pawn_id);
+            PERFORM dune.fn_roll_playtime_reward(v_account_id, NEW.id);
             v_accumulated_seconds := 0;
           END IF;
           
@@ -465,44 +470,44 @@ BEGIN
             last_y = v_y,
             last_z = v_z,
             last_active_at = CURRENT_TIMESTAMP
-          WHERE character_id = NEW.player_pawn_id;
+          WHERE character_id = NEW.id;
         ELSE
           -- Idle player, update timestamp but do not count active seconds
           UPDATE dune.bot_active_playtime 
           SET last_active_at = CURRENT_TIMESTAMP 
-          WHERE character_id = NEW.player_pawn_id;
+          WHERE character_id = NEW.id;
         END IF;
       ELSE
         -- Update timestamp without adding playtime if time jump is too large (e.g. initial login)
         UPDATE dune.bot_active_playtime 
         SET last_active_at = CURRENT_TIMESTAMP 
-        WHERE character_id = NEW.player_pawn_id;
+        WHERE character_id = NEW.id;
       END IF;
     ELSE
       -- Initialize playtime record for new character
       INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_x, last_y, last_z, last_active_at)
-      VALUES (NEW.player_pawn_id, 0, v_curr_xp, v_x, v_y, v_z, CURRENT_TIMESTAMP);
+      VALUES (NEW.id, 0, v_curr_xp, v_x, v_y, v_z, CURRENT_TIMESTAMP);
     END IF;
   ELSE
     -- Player went offline, invalidate active timestamp to prevent counting while offline
     UPDATE dune.bot_active_playtime 
     SET last_active_at = NULL 
-    WHERE character_id = NEW.player_pawn_id;
+    WHERE character_id = NEW.id;
   END IF;
   
   -- Force direct delivery run on save to catch any lingering drops
-  IF NEW.online_status::text = 'Online' THEN
-    PERFORM dune.fn_deliver_playtime_airdrops(NEW.account_id, NEW.player_pawn_id);
+  IF v_online IS NOT NULL AND (LOWER(v_online) = 'online' OR LOWER(v_online) = 'true') THEN
+    PERFORM dune.fn_deliver_playtime_airdrops(v_account_id, NEW.id);
   END IF;
 
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- 10. Install the trigger on the player_state table updates
-DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.player_state;
+-- 10. Install the trigger on the actors table updates instead of the player_state view
+DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.actors;
 CREATE TRIGGER trg_player_state_playtime
-AFTER UPDATE ON dune.player_state
+AFTER UPDATE OF transform ON dune.actors
 FOR EACH ROW
 EXECUTE FUNCTION dune.trg_track_playtime();
 
