@@ -113,7 +113,7 @@ function setupMultipliersSync() {
 async function loadSettings() {
   try {
     const res = await window.DuneAddon.request("database.query", {
-      query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
+      query: "SELECT config_value FROM dune.airdrop_addon_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
     });
     
     let rawRows = [];
@@ -213,7 +213,7 @@ async function handleSaveAllSettings() {
 
     // 1. Save Airdrops Config
     await window.DuneAddon.request("database.execute", {
-      query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
+      query: `INSERT INTO dune.airdrop_addon_config (config_key, config_value) 
               VALUES ('airdrop_multipliers', json_build_object(
                 'playtime_enabled', ${payload.playtime_enabled}::boolean,
                 'playtime_interval', ${payload.playtime_interval}::int,

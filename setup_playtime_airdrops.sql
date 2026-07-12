@@ -28,13 +28,13 @@ CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
 );
 
 -- 3. Create the addon config table
-CREATE TABLE IF NOT EXISTS dune.discord_bot_config (
+CREATE TABLE IF NOT EXISTS dune.airdrop_addon_config (
   config_key TEXT PRIMARY KEY,
   config_value JSONB
 );
 
 -- Insert default configurations if missing
-INSERT INTO dune.discord_bot_config (config_key, config_value) 
+INSERT INTO dune.airdrop_addon_config (config_key, config_value) 
 VALUES (
   'airdrop_multipliers', 
   '{
@@ -219,7 +219,7 @@ DECLARE
 BEGIN
   v_tier := dune.fn_get_pawn_tier(p_pawn_id);
 
-  SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
+  SELECT config_value INTO v_config FROM dune.airdrop_addon_config WHERE config_key = 'airdrop_multipliers';
   IF v_config IS NOT NULL THEN
     v_multiplier := COALESCE((v_config->>('playtime_multiplier_t' || v_tier::text))::numeric, 1.0);
   END IF;
@@ -290,7 +290,7 @@ DECLARE
   v_i INT;
 BEGIN
   -- Load configurations
-  SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
+  SELECT config_value INTO v_config FROM dune.airdrop_addon_config WHERE config_key = 'airdrop_multipliers';
   IF v_config IS NOT NULL THEN
     v_daily_enabled := COALESCE((v_config->>'daily_enabled')::boolean, TRUE);
     v_daily_step := COALESCE((v_config->>'daily_multiplier_step')::numeric, 0.5);
@@ -403,7 +403,7 @@ BEGIN
     -- Only track if player's online status is 'online' or 'true'
     IF v_online IS NOT NULL AND (LOWER(v_online) = 'online' OR LOWER(v_online) = 'true') THEN
       -- Load configurations
-      SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
+      SELECT config_value INTO v_config FROM dune.airdrop_addon_config WHERE config_key = 'airdrop_multipliers';
       IF v_config IS NOT NULL THEN
         v_playtime_enabled := COALESCE((v_config->>'playtime_enabled')::boolean, TRUE);
         v_interval_min := COALESCE((v_config->>'playtime_interval')::int, 60);
