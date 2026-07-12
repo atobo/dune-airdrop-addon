@@ -171,7 +171,26 @@ async function handleSaveAllSettings() {
     // 1. Save Airdrops Config
     await window.DuneAddon.request("database.execute", {
       query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
-              VALUES ('airdrop_multipliers', '${JSON.stringify(payload)}'::jsonb) 
+              VALUES ('airdrop_multipliers', json_build_object(
+                'playtime_enabled', ${payload.playtime_enabled}::boolean,
+                'playtime_interval', ${payload.playtime_interval}::int,
+                'playtime_distance', ${payload.playtime_distance}::numeric,
+                'playtime_xp', ${payload.playtime_xp}::int,
+                'daily_enabled', ${payload.daily_enabled}::boolean,
+                'daily_multiplier_step', ${payload.daily_multiplier_step}::numeric,
+                'daily_max_streak', ${payload.daily_max_streak}::int,
+                'weekly_enabled', ${payload.weekly_enabled}::boolean,
+                'weekly_days_required', ${payload.weekly_days_required}::int,
+                'weekly_multiplier', ${payload.weekly_multiplier}::numeric,
+                'playtime_multiplier_t0', ${payload.playtime_multiplier_t0}::int,
+                'playtime_multiplier_t1', ${payload.playtime_multiplier_t1}::int,
+                'playtime_multiplier_t2', ${payload.playtime_multiplier_t2}::int,
+                'playtime_multiplier_t3', ${payload.playtime_multiplier_t3}::int,
+                'playtime_multiplier_t4', ${payload.playtime_multiplier_t4}::int,
+                'playtime_multiplier_t5', ${payload.playtime_multiplier_t5}::int,
+                'playtime_multiplier_t6', ${payload.playtime_multiplier_t6}::int,
+                'playtime_multiplier', ${payload.playtime_multiplier}::int
+              )) 
               ON CONFLICT (config_key) 
               DO UPDATE SET config_value = EXCLUDED.config_value`
     });
@@ -194,7 +213,9 @@ async function fetchDiagnostics() {
               FROM dune.player_state ps
               LEFT JOIN dune.actors act ON ps.player_pawn_id = act.id
               LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id
-              WHERE ps.player_pawn_id IS NOT NULL AND LOWER(ps.online_status::text) = 'online'`
+              WHERE ps.player_pawn_id IS NOT NULL 
+                AND ps.online_status IS NOT NULL 
+                AND (LOWER(ps.online_status::text) = 'online' OR LOWER(ps.online_status::text) = 'true')`
     });
 
     if (!players || players.length === 0) {
