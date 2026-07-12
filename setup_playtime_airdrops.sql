@@ -390,15 +390,15 @@ DECLARE
   v_is_active BOOLEAN := FALSE;
   v_accumulated_seconds INT;
 BEGIN
-  -- Only track if player's online status is 'online'
-  IF LOWER(NEW.online_status::text) = 'online' THEN
+  -- Only track if player's online status is 'online' or 'true'
+  IF NEW.online_status IS NOT NULL AND (LOWER(NEW.online_status::text) = 'online' OR LOWER(NEW.online_status::text) = 'true') THEN
     -- Load configurations
     SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
     IF v_config IS NOT NULL THEN
       v_playtime_enabled := COALESCE((v_config->>'playtime_enabled')::boolean, TRUE);
       v_interval_min := COALESCE((v_config->>'playtime_interval')::int, 60);
-      v_min_dist := COALESCE((v_config->>'playtime_distance')::double precision, 10.0);
-      v_min_xp := COALESCE((v_config->>'playtime_xp')::int, 1);
+      v_min_dist := COALESCE((v_config->>'playtime_distance')::double precision, 0.0);
+      v_min_xp := COALESCE((v_config->>'playtime_xp')::int, 0);
     END IF;
     IF v_interval_min < 1 THEN v_interval_min := 60; END IF;
 
