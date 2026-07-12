@@ -4,12 +4,12 @@ import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-# Database credentials (aligned with dune-awakening-selfhost-docker settings)
-DB_HOST = "localhost"
+# Database credentials (using Unix sockets inside the Postgres container)
+DB_HOST = ""
 DB_PORT = 5432
 DB_NAME = "dune"
-DB_USER = "dune"
-DB_PASS = "dune"
+DB_USER = "postgres"
+DB_PASS = ""
 
 TICK_INTERVAL = 10     # Increment timer every 10 seconds
 
