@@ -235,8 +235,11 @@ async function fetchDiagnostics() {
     const result = await window.DuneAddon.request("leadership.players.list");
     const players = result.players || result || [];
 
-    // Filter to only online players
-    const onlinePlayers = players.filter(p => p.status === 'Online');
+    // Filter to only online players, checking multiple possible status structures
+    const onlinePlayers = players.filter(p => {
+      const statusText = (p.status || p.online_status || p.online || '').toString().toLowerCase();
+      return statusText === 'online' || statusText === 'true' || p.online === true;
+    });
 
     if (!onlinePlayers || onlinePlayers.length === 0) {
       diagnosticsTableBody.innerHTML = `
