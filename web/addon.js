@@ -81,55 +81,6 @@ function setupMultipliersSync() {
   }
 }
 
-// --- Spawn Modal Logic ---
-function setupSpawnModal() {
-  spawnItemCancelBtn.addEventListener('click', () => {
-    spawnItemModal.classList.add('hidden');
-  });
-
-  spawnItemConfirmBtn.addEventListener('click', async () => {
-    const templateId = spawnItemTemplateInput.value.trim();
-    const qty = parseInt(spawnItemQtyInput.value) || 1;
-    
-    if (!templateId) {
-      showToast('Please enter an item template ID.', 'error');
-      return;
-    }
-
-    if (isSandboxMode) {
-      showToast(`Mock: Spawned ${qty}x ${templateId}`, 'success');
-      spawnItemModal.classList.add('hidden');
-      return;
-    }
-
-    try {
-      // Find inventory ID for the active container
-      const invRes = await window.DuneAddon.request("database.query", {
-        query: "SELECT id FROM dune.inventories WHERE actor_id = $1 LIMIT 1",
-        params: [activeContainerId]
-      });
-
-      if (invRes && invRes.length > 0) {
-        const invId = invRes[0].id;
-        await window.DuneAddon.request("database.execute", {
-          query: `INSERT INTO dune.items (inventory_id, template_id, stack_size, position_index, stats, quality_level)
-                  VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = $1), '{"FItemStackAndDurabilityStats": [[], {"DecayedMaxDurability": 0.0}]}'::jsonb, 0)`,
-          params: [invId, templateId, qty]
-        });
-        showToast(`Successfully spawned ${qty}x ${templateId}`, 'success');
-        await selectContainer(activeContainerId);
-      }
-      spawnItemModal.classList.add('hidden');
-    } catch (err) {
-      showToast(`Failed to spawn item: ${err.message}`, 'error');
-    }
-  });
-
-  // Populate datalist of common items
-  const commonItems = ['ScrapMetal', 'CopperOre', 'IronOre', 'FlourSand', 'PlantFiber', 'Basalt', 'DolomiteRock', 'Silicone', 'WaterCanister', 'SpiceMelange'];
-  validItemTemplates.innerHTML = commonItems.map(item => `<option value="${item}"></option>`).join('');
-}
-
 // --- Database Operations ---
 async function loadSettings() {
   try {
