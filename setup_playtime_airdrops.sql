@@ -239,7 +239,7 @@ DECLARE
 BEGIN
   SELECT id INTO v_inv_id 
   FROM dune.inventories 
-  WHERE actor_id = p_pawn_id AND inventory_type = 0 
+  WHERE actor_id = p_pawn_id::bigint AND inventory_type = 0 
   LIMIT 1;
 
   IF v_inv_id IS NOT NULL THEN
