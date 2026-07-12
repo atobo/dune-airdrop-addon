@@ -8,8 +8,8 @@ from psycopg2.extras import RealDictCursor
 DB_HOST = "localhost"
 DB_PORT = 5432
 DB_NAME = "dune"
-DB_USER = "postgres"  # Using postgres superuser to ensure full access
-DB_PASS = "dune"      # Default self-host db password
+DB_USER = "dune"
+DB_PASS = "dune"
 
 TICK_INTERVAL = 10     # Increment timer every 10 seconds
 
