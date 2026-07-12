@@ -77,7 +77,7 @@ BEGIN
   INTO v_xp, v_skill_points, v_keystone_points
   FROM dune.actor_fgl_entities afe
   LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
-  WHERE afe.actor_id = p_pawn_id AND afe.slot_name = 'DuneCharacter'
+  WHERE afe.actor_id = p_pawn_id::bigint AND afe.slot_name = 'DuneCharacter'
   LIMIT 1;
 
   IF v_skill_points > 0 THEN
@@ -431,7 +431,7 @@ BEGIN
       INTO v_curr_xp
       FROM dune.actor_fgl_entities afe
       LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
-      WHERE afe.actor_id = NEW.id AND afe.slot_name = 'DuneCharacter'
+      WHERE afe.actor_id = NEW.id::bigint AND afe.slot_name = 'DuneCharacter'
       LIMIT 1;
 
       -- Extract translation coordinates safely from transform array
