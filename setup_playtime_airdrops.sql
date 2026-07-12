@@ -507,10 +507,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 10. Install the trigger on the actors table updates instead of the player_state view
+-- 10. Install the trigger on any actors table updates instead of of transform updates only
 DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.actors;
 CREATE TRIGGER trg_player_state_playtime
-AFTER UPDATE OF transform ON dune.actors
+AFTER UPDATE ON dune.actors
 FOR EACH ROW
 EXECUTE FUNCTION dune.trg_track_playtime();
 
