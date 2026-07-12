@@ -115,6 +115,15 @@ async function loadSettings() {
       query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
     });
     
+    let rawRows = [];
+    if (Array.isArray(res)) {
+      rawRows = res;
+    } else if (res && Array.isArray(res.rows)) {
+      rawRows = res.rows;
+    } else if (res && Array.isArray(res.result)) {
+      rawRows = res.result;
+    }
+
     let mults = { 
       playtime_enabled: true, 
       playtime_interval: 60, 
@@ -127,8 +136,8 @@ async function loadSettings() {
       weekly_days_required: 5,
       weekly_multiplier: 5.0
     };
-    if (res && res.length > 0 && res[0].config_value) {
-      mults = { ...mults, ...res[0].config_value };
+    if (rawRows.length > 0 && rawRows[0].config_value) {
+      mults = { ...mults, ...rawRows[0].config_value };
     }
     
     // Load playtime inputs
