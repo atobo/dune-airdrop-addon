@@ -220,10 +220,10 @@ async function handleSaveAllSettings() {
     // 1. Save Airdrops Config
     await window.DuneAddon.request("database.execute", {
       query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
-              VALUES ('airdrop_multipliers', $1::jsonb) 
+              VALUES ('airdrop_multipliers', $1) 
               ON CONFLICT (config_key) 
               DO UPDATE SET config_value = EXCLUDED.config_value`,
-      parameters: [JSON.stringify(payload)]
+      params: [JSON.stringify(payload)]
     });
 
     showToast('All multipliers and settings saved successfully!', 'success');
