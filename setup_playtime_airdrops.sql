@@ -389,10 +389,11 @@ DECLARE
   v_xp_diff BIGINT;
   v_is_active BOOLEAN := FALSE;
   v_accumulated_seconds INT;
-  -- Fetch player state online status and account_id
-  DECLARE
-    v_online TEXT;
-    v_account_id BIGINT;
+
+  v_online TEXT;
+  v_account_id BIGINT;
+BEGIN
+  -- Wrap trigger execution inside a safety block
   BEGIN
     SELECT online_status, account_id INTO v_online, v_account_id 
     FROM dune.player_state 
