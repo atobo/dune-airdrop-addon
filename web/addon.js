@@ -186,22 +186,28 @@ async function handleSaveAllSettings() {
   }
 
   try {
+    const parseVal = (id, fallback, isFloat = false) => {
+      const el = document.getElementById(id);
+      if (!el || el.value === '') return fallback;
+      const parsed = isFloat ? parseFloat(el.value) : parseInt(el.value);
+      return isNaN(parsed) ? fallback : parsed;
+    };
+
     const payload = {
       playtime_enabled: document.getElementById('playtimeEnabledToggle').checked,
-      playtime_interval: parseInt(playtimeIntervalInput.value) || 60,
-      playtime_distance: parseFloat(playtimeDistanceInput.value) || 10.0,
-      playtime_xp: parseInt(playtimeXpInput.value) || 1,
+      playtime_interval: parseVal('playtimeIntervalInput', 60),
+      playtime_distance: parseVal('playtimeDistanceInput', 10.0, true),
+      playtime_xp: parseVal('playtimeXpInput', 1),
       daily_enabled: document.getElementById('dailyEnabledToggle').checked,
-      daily_multiplier_step: parseFloat(document.getElementById('dailyStepInput').value) || 0.5,
-      daily_max_streak: parseInt(document.getElementById('dailyMaxStreakInput').value) || 7,
+      daily_multiplier_step: parseVal('dailyStepInput', 0.5, true),
+      daily_max_streak: parseVal('dailyMaxStreakInput', 7),
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
-      weekly_days_required: parseInt(document.getElementById('weeklyDaysRequiredInput').value) || 5,
-      weekly_multiplier: parseFloat(document.getElementById('weeklyMultiplierInput').value) || 5.0
+      weekly_days_required: parseVal('weeklyDaysRequiredInput', 5),
+      weekly_multiplier: parseVal('weeklyMultiplierInput', 5.0, true)
     };
 
     for (let t = 0; t <= 6; t++) {
-      const input = document.getElementById(`playtimeMultiplierT${t}Input`);
-      payload[`playtime_multiplier_t${t}`] = input ? parseInt(input.value) || 1 : 1;
+      payload[`playtime_multiplier_t${t}`] = parseVal(`playtimeMultiplierT${t}Input`, 1);
     }
     payload.playtime_multiplier = payload.playtime_multiplier_t6;
 
