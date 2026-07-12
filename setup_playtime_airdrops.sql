@@ -435,70 +435,74 @@ DECLARE
       FROM dune.bot_active_playtime 
       WHERE character_id = NEW.id;
     
-    IF v_track.character_id IS NOT NULL THEN
-      -- Calculate seconds passed since last save/update
-      v_delta_seconds := EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_track.last_active_at))::INT;
-      
-      -- Limit delta to 120 seconds per save to avoid offline time-jumps
-      IF v_delta_seconds > 0 AND v_delta_seconds < 120 THEN
-        -- AFK check logic
-        v_dist := SQRT(POWER(v_x - v_track.last_x, 2) + POWER(v_y - v_track.last_y, 2) + POWER(v_z - v_track.last_z, 2));
-        v_xp_diff := v_curr_xp - v_track.last_xp;
+      IF v_track.character_id IS NOT NULL THEN
+        -- Calculate seconds passed since last save/update
+        v_delta_seconds := EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_track.last_active_at))::INT;
+        
+        -- Limit delta to 120 seconds per save to avoid offline time-jumps
+        IF v_delta_seconds > 0 AND v_delta_seconds < 120 THEN
+          -- AFK check logic
+          v_dist := SQRT(POWER(v_x - v_track.last_x, 2) + POWER(v_y - v_track.last_y, 2) + POWER(v_z - v_track.last_z, 2));
+          v_xp_diff := v_curr_xp - v_track.last_xp;
 
-        IF v_min_dist = 0.0 AND v_min_xp = 0 THEN
-          v_is_active := TRUE;
-        ELSE
-          IF v_min_dist > 0.0 AND v_dist >= v_min_dist THEN v_is_active := TRUE; END IF;
-          IF v_min_xp > 0 AND v_xp_diff >= v_min_xp THEN v_is_active := TRUE; END IF;
-        END IF;
-
-        IF v_is_active THEN
-          v_accumulated_seconds := v_track.active_seconds + v_delta_seconds;
-          
-          -- Check if playtime threshold is achieved (and playtime airdrops are enabled)
-          IF v_playtime_enabled AND v_accumulated_seconds >= (v_interval_min * 60) THEN
-            -- Roll reward pack
-            PERFORM dune.fn_roll_playtime_reward(v_account_id, NEW.id);
-            v_accumulated_seconds := 0;
+          IF v_min_dist = 0.0 AND v_min_xp = 0 THEN
+            v_is_active := TRUE;
+          ELSE
+            IF v_min_dist > 0.0 AND v_dist >= v_min_dist THEN v_is_active := TRUE; END IF;
+            IF v_min_xp > 0 AND v_xp_diff >= v_min_xp THEN v_is_active := TRUE; END IF;
           END IF;
-          
-          UPDATE dune.bot_active_playtime 
-          SET 
-            active_seconds = v_accumulated_seconds,
-            last_xp = v_curr_xp,
-            last_x = v_x,
-            last_y = v_y,
-            last_z = v_z,
-            last_active_at = CURRENT_TIMESTAMP
-          WHERE character_id = NEW.id;
+
+          IF v_is_active THEN
+            v_accumulated_seconds := v_track.active_seconds + v_delta_seconds;
+            
+            -- Check if playtime threshold is achieved (and playtime airdrops are enabled)
+            IF v_playtime_enabled AND v_accumulated_seconds >= (v_interval_min * 60) THEN
+              -- Roll reward pack
+              PERFORM dune.fn_roll_playtime_reward(v_account_id, NEW.id);
+              v_accumulated_seconds := 0;
+            END IF;
+            
+            UPDATE dune.bot_active_playtime 
+            SET 
+              active_seconds = v_accumulated_seconds,
+              last_xp = v_curr_xp,
+              last_x = v_x,
+              last_y = v_y,
+              last_z = v_z,
+              last_active_at = CURRENT_TIMESTAMP
+            WHERE character_id = NEW.id;
+          ELSE
+            -- Idle player, update timestamp but do not count active seconds
+            UPDATE dune.bot_active_playtime 
+            SET last_active_at = CURRENT_TIMESTAMP 
+            WHERE character_id = NEW.id;
+          END IF;
         ELSE
-          -- Idle player, update timestamp but do not count active seconds
+          -- Update timestamp without adding playtime if time jump is too large (e.g. initial login)
           UPDATE dune.bot_active_playtime 
           SET last_active_at = CURRENT_TIMESTAMP 
           WHERE character_id = NEW.id;
         END IF;
       ELSE
-        -- Update timestamp without adding playtime if time jump is too large (e.g. initial login)
-        UPDATE dune.bot_active_playtime 
-        SET last_active_at = CURRENT_TIMESTAMP 
-        WHERE character_id = NEW.id;
+        -- Initialize playtime record for new character
+        INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_x, last_y, last_z, last_active_at)
+        VALUES (NEW.id, 0, v_curr_xp, v_x, v_y, v_z, CURRENT_TIMESTAMP);
       END IF;
     ELSE
-      -- Initialize playtime record for new character
-      INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_x, last_y, last_z, last_active_at)
-      VALUES (NEW.id, 0, v_curr_xp, v_x, v_y, v_z, CURRENT_TIMESTAMP);
+      -- Player went offline, invalidate active timestamp to prevent counting while offline
+      UPDATE dune.bot_active_playtime 
+      SET last_active_at = NULL 
+      WHERE character_id = NEW.id;
     END IF;
-  ELSE
-    -- Player went offline, invalidate active timestamp to prevent counting while offline
-    UPDATE dune.bot_active_playtime 
-    SET last_active_at = NULL 
-    WHERE character_id = NEW.id;
-  END IF;
-  
-  -- Force direct delivery run on save to catch any lingering drops
-  IF v_online IS NOT NULL AND (LOWER(v_online) = 'online' OR LOWER(v_online) = 'true') THEN
-    PERFORM dune.fn_deliver_playtime_airdrops(v_account_id, NEW.id);
-  END IF;
+    
+    -- Force direct delivery run on save to catch any lingering drops
+    IF v_online IS NOT NULL AND (LOWER(v_online) = 'online' OR LOWER(v_online) = 'true') THEN
+      PERFORM dune.fn_deliver_playtime_airdrops(v_account_id, NEW.id);
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    -- Prevent trigger errors from crashing base actor updates (which crashes game server runtime partitions)
+    RAISE WARNING 'Dune Airdrop tracking trigger error: %', SQLERRM;
+  END;
 
   RETURN NEW;
 END;
