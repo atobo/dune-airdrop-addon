@@ -58,7 +58,7 @@ def run_playtime_tick():
             cur.execute("""
                 SELECT ps.player_pawn_id, ps.account_id, ps.character_name, a.transform
                 FROM dune.player_state ps
-                LEFT JOIN dune.actors a ON a.id = ps.player_pawn_id::text
+                LEFT JOIN dune.actors a ON a.id = ps.player_pawn_id
                 WHERE LOWER(ps.online_status::text) = 'online' OR LOWER(ps.online_status::text) = 'true';
             """)
             online_players = cur.fetchall()
