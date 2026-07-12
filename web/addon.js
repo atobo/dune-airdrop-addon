@@ -223,7 +223,7 @@ async function handleSaveAllSettings() {
               VALUES ('airdrop_multipliers', $1::jsonb) 
               ON CONFLICT (config_key) 
               DO UPDATE SET config_value = EXCLUDED.config_value`,
-      params: [JSON.stringify(payload)]
+      parameters: [JSON.stringify(payload)]
     });
 
     showToast('All multipliers and settings saved successfully!', 'success');
