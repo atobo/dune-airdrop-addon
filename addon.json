@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "id": "dune-airdrop-addon",
-  "name": "Arrakis Settings & Airdrops",
-  "description": "Standalone manager for XP, harvest multipliers, player diagnostics, and playtime-based airdrop deliveries.",
+  "name": "Airdrop Manager",
+  "description": "Standalone manager for playtime, daily streak, and weekly attendance-based G0 instant airdrops.",
   "author": "Antigravity & atobo",
   "version": "1.0.0",
   "type": "ui",
   "entry": {
-    "navigation": "Arrakis Manager",
+    "navigation": "Airdrop Manager",
     "path": "web/index.html"
   },
   "permissions": {

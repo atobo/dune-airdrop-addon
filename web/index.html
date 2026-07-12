@@ -76,19 +76,13 @@
           </svg>
         </div>
         <div>
-          <h1 class="text-xl font-bold font-mono tracking-wider text-amber-500 neon-text-orange">ARRAKIS MANAGER</h1>
+          <h1 class="text-xl font-bold font-mono tracking-wider text-amber-500 neon-text-orange">AIRDROP MANAGER</h1>
           <p class="text-xs text-slate-500 tracking-widest font-mono">STANDALONE CONSOLE ADDON</p>
         </div>
         <!-- Navigation Tabs -->
         <nav class="flex space-x-2 ml-8 border-l border-slate-900 pl-8">
-          <button id="tabBlueprintBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition text-slate-400 hover:text-slate-200">
-            BLUEPRINTS
-          </button>
           <button id="tabSettingsBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition bg-amber-500 text-slate-950 neon-glow-orange">
             AIRDROPS & SETTINGS
-          </button>
-          <button id="tabLootBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition text-slate-400 hover:text-slate-200">
-            CONTAINERS
           </button>
         </nav>
       </div>
@@ -100,230 +94,30 @@
     </div>
   </header>
 
-  <!-- Main Content Layout (Blueprint View) -->
-  <main id="blueprintView" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6 overflow-hidden">
-    
-    <!-- Left Column: Upload, Details & Transforms -->
-    <div class="w-full lg:w-5/12 flex flex-col gap-6 overflow-y-auto pr-1">
-      <!-- Source Blueprint -->
-      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
-        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
-          <span class="mr-2">⚡</span> Source Blueprint
-        </h2>
-        <div id="dropzone" class="border-2 border-dashed border-slate-800 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:border-amber-500/50 transition duration-200">
-          <svg class="h-10 w-10 text-slate-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          <span class="text-sm font-medium text-slate-300">Drop blueprint JSON here or click to browse</span>
-          <span class="text-xs text-slate-500 mt-1">Accepts raw exported .json files</span>
-          <input type="file" id="fileInput" class="hidden" accept=".json" />
-        </div>
-        <div class="mt-4 flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-mono">OR PASTE RAW JSON BELOW</span>
-          <button id="loadDemoBtn" class="text-xs text-amber-500 hover:text-amber-400 font-mono underline">Load Demo Blueprint</button>
-        </div>
-        <textarea id="jsonInput" placeholder="Paste blueprint JSON here..." class="mt-2 w-full h-32 bg-slate-950/80 border border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-300 focus:outline-none focus:border-amber-500/50 resize-none"></textarea>
-        <button id="parseBtn" class="mt-4 w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-2 px-4 rounded-lg font-mono tracking-wider transition duration-150 ease-in-out">
-          PARSE BLUEPRINT
-        </button>
-      </section>
-
-      <!-- Offset & Rotation Modifiers -->
-      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border">
-        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
-          <span class="mr-2">⚙️</span> Coordinate Modifiers
-        </h2>
-        <div class="grid grid-cols-3 gap-3">
-          <div>
-            <label class="block text-xs font-mono text-slate-400 mb-1">Offset X</label>
-            <input type="number" id="offsetX" value="0" step="100" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
-          </div>
-          <div>
-            <label class="block text-xs font-mono text-slate-400 mb-1">Offset Y</label>
-            <input type="number" id="offsetY" value="0" step="100" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
-          </div>
-          <div>
-            <label class="block text-xs font-mono text-slate-400 mb-1">Offset Z</label>
-            <input type="number" id="offsetZ" value="0" step="100" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3 mt-3">
-          <div>
-            <label class="block text-xs font-mono text-slate-400 mb-1">Rotation Offset (Yaw)</label>
-            <input type="number" id="offsetRot" value="0" min="-180" max="180" step="15" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
-          </div>
-          <div>
-            <label class="block text-xs font-mono text-slate-400 mb-1">Building Name</label>
-            <input type="text" id="blueprintName" placeholder="My Custom Building" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
-          </div>
-        </div>
-      </section>
-
-      <!-- Stats Overview -->
-      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex-1 min-h-[220px]">
-        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
-          <span class="mr-2">📊</span> Blueprint Summary
-        </h2>
-        <div id="statsSummary" class="text-slate-400 text-sm space-y-4">
-          <p class="italic text-slate-500 text-xs">No blueprint parsed yet. Upload a JSON file to inspect statistics.</p>
-        </div>
-      </section>
-
-      <!-- Buildings Management -->
-      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[260px]">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
-            <span class="mr-2">🏰</span> In-World Buildings
-          </h2>
-          <button id="refreshBuildingsBtn" class="px-2 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded text-xs font-mono text-slate-300 transition">
-            REFRESH
-          </button>
-        </div>
-        <div class="flex-1 overflow-y-auto scrollbar-thin max-h-56 pr-1">
-          <table class="w-full text-left text-xs font-mono border-collapse">
-            <thead>
-              <tr class="text-slate-500 border-b border-slate-800/80">
-                <th class="pb-2 font-semibold">ID</th>
-                <th class="pb-2 font-semibold">Map</th>
-                <th class="pb-2 font-semibold">Owner</th>
-                <th class="pb-2 font-semibold">Pieces</th>
-                <th class="pb-2 font-semibold text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody id="buildingsTableBody" class="text-slate-300 divide-y divide-slate-900/50">
-              <tr>
-                <td colspan="5" class="py-4 text-center italic text-slate-500">Connecting to server...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-
-    <!-- Right Column: Visualizer & SQL Generator -->
-    <div class="flex-1 flex flex-col gap-6 overflow-hidden">
-      <!-- Visualizer (Top Half) -->
-      <section class="flex-1 bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[300px] overflow-hidden">
-        <div class="flex items-center justify-between mb-2">
-          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
-            <span class="mr-2">🪐</span> Top-Down Schematic Preview
-          </h2>
-          <div class="flex items-center space-x-2 text-xs font-mono text-slate-400">
-            <button id="resetViewBtn" class="px-2 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded transition">Reset View</button>
-            <span id="coordDisplay">X: 0.00, Y: 0.00</span>
-          </div>
-        </div>
-        <div class="flex-1 bg-slate-950 rounded-lg relative overflow-hidden border border-slate-900">
-          <canvas id="visualizerCanvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
-          <div class="absolute bottom-2 left-2 bg-slate-950/90 border border-slate-800 px-2 py-1 rounded text-[10px] font-mono text-slate-400 pointer-events-none flex space-x-3">
-            <span class="flex items-center"><span class="w-2.5 h-2.5 bg-amber-500 rounded-full mr-1 inline-block"></span> Structural</span>
-            <span class="flex items-center"><span class="w-2.5 h-2.5 bg-teal-500 rounded-full mr-1 inline-block"></span> Placeable</span>
-            <span class="flex items-center"><span class="w-2.5 h-2.5 bg-rose-500 rounded-full mr-1 inline-block"></span> Pentashield</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- SQL Generator (Bottom Half) -->
-      <section class="h-2/5 bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col overflow-hidden min-h-[260px]">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
-            <span class="mr-2">📜</span> Database SQL Generator
-          </h2>
-          <div class="flex items-center space-x-3">
-            <button id="copySqlBtn" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
-              COPY SQL
-            </button>
-            <button id="injectBtn" disabled class="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
-              INJECT ITEM
-            </button>
-            <button id="constructBtn" disabled class="bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
-              BUILD IN-WORLD
-            </button>
-          </div>
-        </div>
-        
-        <!-- Parameter Form -->
-        <div class="grid grid-cols-2 gap-3 mb-3 bg-slate-950/40 p-2.5 rounded border border-slate-900">
-          <div>
-            <label class="block text-[10px] font-mono text-slate-500 uppercase mb-0.5">Target Player</label>
-            <div class="flex space-x-1.5">
-              <select id="playerSelect" class="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 font-mono w-full">
-                <option value="">Select character...</option>
-              </select>
-              <input type="text" id="playerPawnId" placeholder="e.g. Character_Online_0" class="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 font-mono hidden" />
-            </div>
-          </div>
-          <div>
-            <label class="block text-[10px] font-mono text-slate-500 uppercase mb-0.5">Custom Item Name</label>
-            <input type="text" id="customItemName" placeholder="Leave blank to use blueprint name" class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 font-mono" />
-          </div>
-        </div>
-
-        <div class="flex-1 bg-slate-950/80 rounded-lg border border-slate-800 p-3 font-mono text-xs overflow-y-auto text-amber-200/90 whitespace-pre scrollbar-thin">
-          <code id="sqlOutput">-- SQL output will be generated here upon parsing.</code>
-        </div>
-      </section>
-    </div>
-  </main>
-
   <!-- Airdrops & Settings Management Layout -->
   <main id="settingsView" class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6 overflow-hidden">
     <!-- Left Column: Multipliers & Scaling -->
     <div class="w-full lg:w-7/12 flex flex-col gap-6 overflow-y-auto pr-1">
       
-      <!-- Global Server Multipliers -->
-      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
-        <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-2">
-          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
-            <span class="mr-2">⚙️</span> Global Server Multipliers
-          </h2>
-          <button onclick="handleSaveAllSettings()" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-1 px-4 rounded text-xs font-mono tracking-wider transition">
-            SAVE ALL SETTINGS
-          </button>
-        </div>
-        
-        <div class="space-y-4 font-mono">
-          <!-- XP Multiplier -->
-          <div class="flex flex-col gap-1.5">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-amber-500 text-xs">✨</span>
-                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">XP Multiplier</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <input type="number" id="xpMultiplierInput" min="0.1" max="100" step="0.1" value="1.0" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
-                <span class="text-[10px] text-slate-500 font-bold">x</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-3">
-              <input type="range" id="xpMultiplierSlider" min="0.1" max="50" step="0.5" value="1.0" class="flex-1 accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
-            </div>
-          </div>
 
-          <!-- Harvesting Multiplier -->
-          <div class="flex flex-col gap-1.5">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-amber-500 text-xs">🌾</span>
-                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Harvest Multiplier</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <input type="number" id="harvestMultiplierInput" min="0.1" max="100" step="0.1" value="1.0" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
-                <span class="text-[10px] text-slate-500 font-bold">x</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-3">
-              <input type="range" id="harvestMultiplierSlider" min="0.1" max="50" step="0.5" value="1.0" class="flex-1 accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
-            </div>
-          </div>
-        </div>
-      </section>
 
       <!-- Airdrop & Playtime Rules -->
       <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
-        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 border-b border-slate-800 pb-2 flex items-center">
-          <span class="mr-2">⏱️</span> Playtime Airdrop Settings
-        </h2>
+        <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">⏱️</span> Playtime Airdrop Settings
+          </h2>
+          <div class="flex items-center space-x-4">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="playtimeEnabledToggle" checked class="sr-only peer" />
+              <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
+              <span class="ml-2 font-mono text-[10px] text-slate-400">ENABLED</span>
+            </label>
+            <button onclick="handleSaveAllSettings()" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-1 px-4 rounded text-xs font-mono tracking-wider transition">
+              SAVE ALL SETTINGS
+            </button>
+          </div>
+        </div>
         <div class="space-y-4 font-mono">
           <!-- Playtime Interval -->
           <div class="flex flex-col gap-1.5">
@@ -378,6 +172,81 @@
         </div>
       </section>
 
+      <!-- Daily & Weekly Rewards Config -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+        <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">📅</span> Daily streak rewards
+          </h2>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="dailyEnabledToggle" checked class="sr-only peer" />
+            <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
+            <span class="ml-2 font-mono text-[10px] text-slate-400">ENABLED</span>
+          </label>
+        </div>
+        <div class="space-y-4 font-mono">
+          <!-- Daily Multiplier Step -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Consecutive Multiplier Step</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="dailyStepInput" min="0.1" max="10" step="0.1" value="0.5" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">+x</span>
+              </div>
+            </div>
+            <input type="range" id="dailyStepSlider" min="0.1" max="5.0" step="0.1" value="0.5" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+          <!-- Daily Max Streak -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Max Streak Cap</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="dailyMaxStreakInput" min="1" max="30" value="7" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">days</span>
+              </div>
+            </div>
+            <input type="range" id="dailyMaxStreakSlider" min="1" max="30" value="7" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+        <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">🏆</span> Weekly attendance rewards
+          </h2>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="weeklyEnabledToggle" checked class="sr-only peer" />
+            <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
+            <span class="ml-2 font-mono text-[10px] text-slate-400">ENABLED</span>
+          </label>
+        </div>
+        <div class="space-y-4 font-mono">
+          <!-- Weekly Days Required -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Required Days (Out of 7)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="weeklyDaysRequiredInput" min="1" max="7" value="5" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">days</span>
+              </div>
+            </div>
+            <input type="range" id="weeklyDaysRequiredSlider" min="1" max="7" value="5" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+          <!-- Weekly Multiplier -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Weekly Reward Scale</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="weeklyMultiplierInput" min="1" max="100" step="0.5" value="5.0" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="weeklyMultiplierSlider" min="1" max="50" step="0.5" value="5.0" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+        </div>
+      </section>
+      
       <!-- Playtime Multipliers per Tier -->
       <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
         <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 border-b border-slate-800 pb-2 flex items-center">
@@ -665,7 +534,6 @@
 
   <!-- Script tags -->
   <script src="./dune-addon-bridge.js"></script>
-  <script src="blueprintParser.js"></script>
   <script src="addon.js"></script>
 </body>
 </html>

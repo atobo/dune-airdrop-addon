@@ -3,21 +3,11 @@
  */
 
 // Tab Navigation elements
-const tabBlueprintBtn = document.getElementById('tabBlueprintBtn');
 const tabSettingsBtn = document.getElementById('tabSettingsBtn');
-const tabLootBtn = document.getElementById('tabLootBtn');
-
-const blueprintView = document.getElementById('blueprintView');
 const settingsView = document.getElementById('settingsView');
-const lootView = document.getElementById('lootView');
-
 const connectionStatusBadge = document.getElementById('connectionStatusBadge');
 
 // Multipliers settings inputs
-const xpMultiplierSlider = document.getElementById('xpMultiplierSlider');
-const xpMultiplierInput = document.getElementById('xpMultiplierInput');
-const harvestMultiplierSlider = document.getElementById('harvestMultiplierSlider');
-const harvestMultiplierInput = document.getElementById('harvestMultiplierInput');
 
 const playtimeIntervalSlider = document.getElementById('playtimeIntervalSlider');
 const playtimeIntervalInput = document.getElementById('playtimeIntervalInput');
@@ -31,23 +21,6 @@ const diagnosticsTableBody = document.getElementById('diagnosticsTableBody');
 const pendingAirdropsTableBody = document.getElementById('pendingAirdropsTableBody');
 const airdropPlayerSelect = document.getElementById('airdropPlayerSelect');
 
-// Containers Management elements
-const lootContainersTableBody = document.getElementById('lootContainersTableBody');
-const lootSearchInput = document.getElementById('lootSearchInput');
-const lootMapSelect = document.getElementById('lootMapSelect');
-const containerInventoryGrid = document.getElementById('containerInventoryGrid');
-const containerHeader = document.getElementById('containerHeader');
-
-// Spawn Modal elements
-const spawnItemModal = document.getElementById('spawnItemModal');
-const spawnItemTemplateInput = document.getElementById('spawnItemTemplateInput');
-const spawnItemQtyInput = document.getElementById('spawnItemQtyInput');
-const spawnItemConfirmBtn = document.getElementById('spawnItemConfirmBtn');
-const spawnItemCancelBtn = document.getElementById('spawnItemCancelBtn');
-const validItemTemplates = document.getElementById('validItemTemplates');
-
-let activeContainerId = null;
-let currentContainersList = [];
 let pendingAirdropsData = [];
 
 // Determine if running inside the Dune Docker Console iframe
@@ -55,9 +28,7 @@ const isSandboxMode = window.parent === window;
 
 // --- Initialize Bridge & UI ---
 document.addEventListener('DOMContentLoaded', async () => {
-  setupNavigation();
   setupMultipliersSync();
-  setupSpawnModal();
   
   if (isSandboxMode) {
     connectionStatusBadge.textContent = 'Bridge Sandbox';
@@ -71,39 +42,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadSettings();
     await fetchDiagnostics();
     await fetchPendingAirdrops();
-    await fetchContainers();
     
     // Set up polling intervals
     setInterval(fetchDiagnostics, 5000);
     setInterval(fetchPendingAirdrops, 5000);
   }
 });
-
-// --- Tab Navigation Setup ---
-function setupNavigation() {
-  const tabs = [
-    { btn: tabBlueprintBtn, view: blueprintView },
-    { btn: tabSettingsBtn, view: settingsView },
-    { btn: tabLootBtn, view: lootView }
-  ];
-
-  tabs.forEach(tab => {
-    tab.btn.addEventListener('click', () => {
-      tabs.forEach(t => {
-        t.view.classList.add('hidden');
-        t.view.classList.remove('flex');
-        t.btn.classList.remove('bg-amber-500', 'text-slate-950', 'neon-glow-orange');
-        t.btn.classList.add('text-slate-400', 'hover:text-slate-200');
-      });
-      tab.view.classList.remove('hidden');
-      if (tab.view === settingsView || tab.view === lootView || tab.view === blueprintView) {
-        tab.view.classList.add('flex');
-      }
-      tab.btn.classList.add('bg-amber-500', 'text-slate-950', 'neon-glow-orange');
-      tab.btn.classList.remove('text-slate-400', 'hover:text-slate-200');
-    });
-  });
-}
 
 // --- Multipliers Sync Bindings ---
 function setupMultipliersSync() {
@@ -119,11 +63,15 @@ function setupMultipliersSync() {
     });
   };
 
-  syncRangeAndNumber(xpMultiplierSlider, xpMultiplierInput, 0.1, 100, 0.5);
-  syncRangeAndNumber(harvestMultiplierSlider, harvestMultiplierInput, 0.1, 100, 0.5);
   syncRangeAndNumber(playtimeIntervalSlider, playtimeIntervalInput, 1, 120, 1);
   syncRangeAndNumber(playtimeDistanceSlider, playtimeDistanceInput, 0, 100, 1);
   syncRangeAndNumber(playtimeXpSlider, playtimeXpInput, 0, 1000, 5);
+
+  // Sync Daily and Weekly sliders
+  syncRangeAndNumber(document.getElementById('dailyStepSlider'), document.getElementById('dailyStepInput'), 0.1, 10, 0.1);
+  syncRangeAndNumber(document.getElementById('dailyMaxStreakSlider'), document.getElementById('dailyMaxStreakInput'), 1, 30, 1);
+  syncRangeAndNumber(document.getElementById('weeklyDaysRequiredSlider'), document.getElementById('weeklyDaysRequiredInput'), 1, 7, 1);
+  syncRangeAndNumber(document.getElementById('weeklyMultiplierSlider'), document.getElementById('weeklyMultiplierInput'), 1, 100, 0.5);
 
   // Sync Tier Multipliers
   for (let t = 0; t <= 6; t++) {
@@ -164,8 +112,8 @@ function setupSpawnModal() {
       if (invRes && invRes.length > 0) {
         const invId = invRes[0].id;
         await window.DuneAddon.request("database.execute", {
-          query: `INSERT INTO dune.items (inventory_id, template_id, stack_size, position_index, is_new, acquisition_time, stats, quality_level)
-                  VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = $1), true, 0, '{}'::jsonb, 0)`,
+          query: `INSERT INTO dune.items (inventory_id, template_id, stack_size, position_index, stats, quality_level)
+                  VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = $1), '{"FItemStackAndDurabilityStats": [[], {"DecayedMaxDurability": 0.0}]}'::jsonb, 0)`,
           params: [invId, templateId, qty]
         });
         showToast(`Successfully spawned ${qty}x ${templateId}`, 'success');
@@ -189,18 +137,44 @@ async function loadSettings() {
       query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
     });
     
-    let mults = { playtime_interval: 60, playtime_distance: 10, playtime_xp: 1 };
+    let mults = { 
+      playtime_enabled: true, 
+      playtime_interval: 60, 
+      playtime_distance: 10, 
+      playtime_xp: 1,
+      daily_enabled: true,
+      daily_multiplier_step: 0.5,
+      daily_max_streak: 7,
+      weekly_enabled: true,
+      weekly_days_required: 5,
+      weekly_multiplier: 5.0
+    };
     if (res && res.length > 0 && res[0].config_value) {
-      mults = res[0].config_value;
+      mults = { ...mults, ...res[0].config_value };
     }
     
-    // Load inputs
+    // Load playtime inputs
+    document.getElementById('playtimeEnabledToggle').checked = mults.playtime_enabled !== undefined ? mults.playtime_enabled : true;
     playtimeIntervalInput.value = mults.playtime_interval || 60;
     playtimeIntervalSlider.value = mults.playtime_interval || 60;
     playtimeDistanceInput.value = mults.playtime_distance !== undefined ? mults.playtime_distance : 10.0;
     playtimeDistanceSlider.value = mults.playtime_distance !== undefined ? mults.playtime_distance : 10.0;
     playtimeXpInput.value = mults.playtime_xp !== undefined ? mults.playtime_xp : 1;
     playtimeXpSlider.value = mults.playtime_xp !== undefined ? mults.playtime_xp : 1;
+
+    // Load Daily inputs
+    document.getElementById('dailyEnabledToggle').checked = mults.daily_enabled !== undefined ? mults.daily_enabled : true;
+    document.getElementById('dailyStepInput').value = mults.daily_multiplier_step !== undefined ? mults.daily_multiplier_step : 0.5;
+    document.getElementById('dailyStepSlider').value = mults.daily_multiplier_step !== undefined ? mults.daily_multiplier_step : 0.5;
+    document.getElementById('dailyMaxStreakInput').value = mults.daily_max_streak !== undefined ? mults.daily_max_streak : 7;
+    document.getElementById('dailyMaxStreakSlider').value = mults.daily_max_streak !== undefined ? mults.daily_max_streak : 7;
+
+    // Load Weekly inputs
+    document.getElementById('weeklyEnabledToggle').checked = mults.weekly_enabled !== undefined ? mults.weekly_enabled : true;
+    document.getElementById('weeklyDaysRequiredInput').value = mults.weekly_days_required !== undefined ? mults.weekly_days_required : 5;
+    document.getElementById('weeklyDaysRequiredSlider').value = mults.weekly_days_required !== undefined ? mults.weekly_days_required : 5;
+    document.getElementById('weeklyMultiplierInput').value = mults.weekly_multiplier !== undefined ? mults.weekly_multiplier : 5.0;
+    document.getElementById('weeklyMultiplierSlider').value = mults.weekly_multiplier !== undefined ? mults.weekly_multiplier : 5.0;
 
     for (let t = 0; t <= 6; t++) {
       const input = document.getElementById(`playtimeMultiplierT${t}Input`);
@@ -212,17 +186,6 @@ async function loadSettings() {
       }
     }
 
-    // Load Gameplay rates
-    const gameplayRes = await window.DuneAddon.request("database.query", {
-      query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'gameplay_settings' LIMIT 1"
-    });
-    if (gameplayRes && gameplayRes.length > 0 && gameplayRes[0].config_value) {
-      const gp = gameplayRes[0].config_value;
-      xpMultiplierInput.value = gp.xp_multiplier || 1.0;
-      xpMultiplierSlider.value = Math.min(50, gp.xp_multiplier || 1.0);
-      harvestMultiplierInput.value = gp.harvest_multiplier || 1.0;
-      harvestMultiplierSlider.value = Math.min(50, gp.harvest_multiplier || 1.0);
-    }
   } catch (err) {
     showToast(`Failed to load settings: ${err.message}`, 'error');
   }
@@ -236,9 +199,16 @@ async function handleSaveAllSettings() {
 
   try {
     const payload = {
+      playtime_enabled: document.getElementById('playtimeEnabledToggle').checked,
       playtime_interval: parseInt(playtimeIntervalInput.value) || 60,
       playtime_distance: parseFloat(playtimeDistanceInput.value) || 10.0,
-      playtime_xp: parseInt(playtimeXpInput.value) || 1
+      playtime_xp: parseInt(playtimeXpInput.value) || 1,
+      daily_enabled: document.getElementById('dailyEnabledToggle').checked,
+      daily_multiplier_step: parseFloat(document.getElementById('dailyStepInput').value) || 0.5,
+      daily_max_streak: parseInt(document.getElementById('dailyMaxStreakInput').value) || 7,
+      weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
+      weekly_days_required: parseInt(document.getElementById('weeklyDaysRequiredInput').value) || 5,
+      weekly_multiplier: parseFloat(document.getElementById('weeklyMultiplierInput').value) || 5.0
     };
 
     for (let t = 0; t <= 6; t++) {
@@ -254,19 +224,6 @@ async function handleSaveAllSettings() {
               ON CONFLICT (config_key) 
               DO UPDATE SET config_value = EXCLUDED.config_value`,
       params: [JSON.stringify(payload)]
-    });
-
-    // 2. Save Gameplay Rates
-    const gpPayload = {
-      xp_multiplier: parseFloat(xpMultiplierInput.value) || 1.0,
-      harvest_multiplier: parseFloat(harvestMultiplierInput.value) || 1.0
-    };
-    await window.DuneAddon.request("database.execute", {
-      query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
-              VALUES ('gameplay_settings', $1::jsonb) 
-              ON CONFLICT (config_key) 
-              DO UPDATE SET config_value = EXCLUDED.config_value`,
-      params: [JSON.stringify(gpPayload)]
     });
 
     showToast('All multipliers and settings saved successfully!', 'success');
@@ -375,221 +332,6 @@ function renderPendingAirdrops() {
   `).join('');
 }
 
-// --- Container Inventory Management ---
-async function fetchContainers() {
-  if (isSandboxMode) return;
-
-  try {
-    const list = await window.DuneAddon.request("database.query", {
-      query: `SELECT 
-                a.id AS container_id,
-                a.class,
-                a.map,
-                a.transform::text AS transform,
-                inv.id AS inventory_id,
-                (SELECT COUNT(*) FROM dune.items i WHERE i.inventory_id = inv.id) AS item_count,
-                COALESCE(
-                  (SELECT DISTINCT LOWER(dune.decrypt_user_data(eps.encrypted_character_name))
-                   FROM dune.permission_actor_rank par
-                   JOIN dune.encrypted_player_state eps ON par.player_id = eps.player_controller_id
-                   WHERE par.permission_actor_id = a.id LIMIT 1),
-                  'System'
-                ) AS owner_name
-              FROM dune.inventories inv
-              JOIN dune.actors a ON inv.actor_id = a.id
-              WHERE a.class NOT LIKE '%Character%' AND a.class NOT LIKE '%Thrall%'
-              ORDER BY a.class, a.id`
-    });
-
-    currentContainersList = list.map(c => {
-      let x=0, y=0, z=0;
-      if (c.transform) {
-        const clean = c.transform.replace(/[()"']/g, '');
-        const parts = clean.split(',').map(Number);
-        if (parts.length >= 3 && !parts.some(isNaN)) {
-          x = parts[0]; y = parts[1]; z = parts[2];
-        }
-      }
-      return {
-        containerId: c.container_id,
-        class: c.class,
-        map: c.map || 'Unknown',
-        inventoryId: c.inventory_id,
-        itemCount: parseInt(c.item_count) || 0,
-        ownerName: c.owner_name || 'System',
-        coords: { x, y, z }
-      };
-    });
-
-    renderContainersTable();
-  } catch (err) {
-    showToast(`Failed to load containers: ${err.message}`, 'error');
-  }
-}
-
-function renderContainersTable() {
-  const query = lootSearchInput.value.trim().toLowerCase();
-  const mapFilter = lootMapSelect.value;
-  
-  const filtered = currentContainersList.filter(c => {
-    const matchQuery = c.class.toLowerCase().includes(query) || c.containerId.toString().includes(query) || c.ownerName.toLowerCase().includes(query);
-    const matchMap = !mapFilter || c.map === mapFilter;
-    return matchQuery && matchMap;
-  });
-
-  if (filtered.length === 0) {
-    lootContainersTableBody.innerHTML = `
-      <tr>
-        <td colspan="4" class="py-4 text-center italic text-slate-500">No matching containers found.</td>
-      </tr>
-    `;
-    return;
-  }
-
-  lootContainersTableBody.innerHTML = filtered.map(c => {
-    const isSelected = c.containerId === activeContainerId;
-    return `
-      <tr onclick="selectContainer('${c.containerId}')" class="border-b border-slate-900/40 hover:bg-slate-900/20 cursor-pointer transition ${isSelected ? 'bg-amber-500/10 border-amber-500/20' : ''}">
-        <td class="py-2.5 font-mono text-[10px] text-slate-500">${c.containerId}</td>
-        <td class="py-2.5">
-          <div class="font-mono text-xs text-amber-500 font-bold">${c.class.split('.').pop()}</div>
-          <div class="text-[10px] text-slate-400 font-mono">${c.map} (${Math.round(c.coords.x)}, ${Math.round(c.coords.y)})</div>
-        </td>
-        <td class="py-2.5 font-mono text-xs text-slate-300">${c.ownerName}</td>
-        <td class="py-2.5 text-center font-mono text-xs font-bold text-amber-500">${c.itemCount}</td>
-      </tr>
-    `;
-  }).join('');
-}
-
-async function selectContainer(containerId) {
-  activeContainerId = parseInt(containerId);
-  renderContainersTable();
-
-  const container = currentContainersList.find(c => c.containerId === activeContainerId);
-  if (!container) return;
-
-  containerHeader.innerHTML = `
-    <div class="flex items-center justify-between">
-      <div>
-        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-1">
-          📦 Container ${container.containerId} Details
-        </h2>
-        <p class="text-xs text-slate-400 font-mono">${container.class.split('.').pop()} | Owner: ${container.ownerName}</p>
-      </div>
-      <button onclick="openSpawnItemModal()" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 text-xs font-mono font-bold rounded transition">
-        + SPAWN ITEM
-      </button>
-    </div>
-  `;
-
-  if (isSandboxMode) {
-    containerInventoryGrid.innerHTML = `
-      <div class="col-span-full py-12 text-center text-slate-500 font-mono italic">
-        Sandbox mode: Select elements to test coordinate renders.
-      </div>
-    `;
-    return;
-  }
-
-  try {
-    const items = await window.DuneAddon.request("database.query", {
-      query: `SELECT i.id, i.stack_size, i.position_index, i.template_id, i.stats
-              FROM dune.items i
-              JOIN dune.inventories inv ON i.inventory_id = inv.id
-              WHERE inv.actor_id = $1
-              ORDER BY i.position_index`,
-      params: [activeContainerId]
-    });
-
-    if (!items || items.length === 0) {
-      containerInventoryGrid.innerHTML = `
-        <div class="col-span-full py-12 text-center text-slate-500 font-mono italic">
-          This container is empty.
-        </div>
-      `;
-      return;
-    }
-
-    containerInventoryGrid.innerHTML = items.map(item => `
-      <div class="bg-slate-950/60 border border-slate-900 rounded-lg p-3 font-mono text-xs flex flex-col justify-between">
-        <div>
-          <div class="text-amber-500 font-bold">${item.template_id}</div>
-          <div class="text-[10px] text-slate-500 mt-1">Slot: ${item.position_index}</div>
-        </div>
-        <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-900/60">
-          <div class="flex items-center gap-1">
-            <span class="text-[10px] text-slate-600">Qty:</span>
-            <input type="number" onchange="updateItemQty('${item.id}', this.value)" value="${item.stack_size}" min="1" class="w-12 bg-slate-900 border border-slate-800 rounded px-1.5 text-center text-amber-500 text-xs focus:outline-none" />
-          </div>
-          <button onclick="deleteContainerItem('${item.id}')" class="text-rose-500 hover:text-rose-400 text-[10px] uppercase font-bold tracking-wider">
-            Delete
-          </button>
-        </div>
-      </div>
-    `).join('');
-  } catch (err) {
-    containerInventoryGrid.innerHTML = `
-      <div class="col-span-full py-8 text-center text-rose-500 font-mono">
-        Error loading items: ${err.message}
-      </div>
-    `;
-  }
-}
-
-async function updateItemQty(itemId, newQty) {
-  if (isSandboxMode) return;
-  try {
-    await window.DuneAddon.request("database.execute", {
-      query: "UPDATE dune.items SET stack_size = $1 WHERE id = $2",
-      params: [parseInt(newQty) || 1, itemId]
-    });
-    showToast('Updated item quantity.', 'success');
-    await fetchContainers();
-    await selectContainer(activeContainerId);
-  } catch (err) {
-    showToast(`Failed to update quantity: ${err.message}`, 'error');
-  }
-}
-
-async function deleteContainerItem(itemId) {
-  if (isSandboxMode) return;
-  if (!confirm('Are you sure you want to delete this item?')) return;
-  try {
-    await window.DuneAddon.request("database.execute", {
-      query: "DELETE FROM dune.items WHERE id = $1",
-      params: [itemId]
-    });
-    showToast('Deleted item.', 'success');
-    await fetchContainers();
-    await selectContainer(activeContainerId);
-  } catch (err) {
-    showToast(`Failed to delete item: ${err.message}`, 'error');
-  }
-}
-
-function openSpawnItemModal() {
-  spawnItemTemplateInput.value = '';
-  spawnItemQtyInput.value = '1';
-  spawnItemModal.classList.remove('hidden');
-}
-
-// --- Sync & Force Actions ---
-async function handleForceSyncLoot() {
-  if (isSandboxMode) {
-    showToast('Mock: Force restart issued.', 'success');
-    return;
-  }
-  if (!confirm('WARNING: Applying edits will restart the survival server. Online players will be disconnected. Continue?')) return;
-  
-  // Custom API restart trigger if available via permission, or database status update
-  showToast('Applying container changes and restarting survival server...', 'info');
-}
-
-async function handleClearLootQueue() {
-  showToast('Queue cleared.', 'success');
-}
-
 // --- UI Toasts ---
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
@@ -625,12 +367,6 @@ function showToast(message, type = 'success') {
 
 // --- Mock Sandbox Loader ---
 function loadMockData() {
-  currentContainersList = [
-    { containerId: 1001, class: 'BP_SurvivalCrate_Loot_C', map: 'HaggaBasin', inventoryId: 50, itemCount: 4, ownerName: 'System', coords: { x: 4500, y: -2000, z: 120 } },
-    { containerId: 1002, class: 'BP_DungeonChest_Cargo_C', map: 'DeepDesert', inventoryId: 51, itemCount: 8, ownerName: 'System', coords: { x: -8400, y: 15400, z: -10 } },
-    { containerId: 1003, class: 'BP_PlayerLocker_Storage_C', map: 'HaggaBasin', inventoryId: 52, itemCount: 2, ownerName: 'atobo', coords: { x: 300, y: 1200, z: 50 } }
-  ];
-  
   diagnosticsTableBody.innerHTML = `
     <tr class="border-b border-slate-900/40 font-mono text-xs">
       <td class="py-2 text-slate-300">PlayerOne</td>
@@ -653,16 +389,8 @@ function loadMockData() {
       <td class="py-1.5 text-right text-slate-300 font-bold">1</td>
     </tr>
   `;
-
-  renderContainersTable();
 }
 
 // Globals exports
 window.handleSaveAllSettings = handleSaveAllSettings;
-window.handleForceSyncLoot = handleForceSyncLoot;
-window.handleClearLootQueue = handleClearLootQueue;
-window.selectContainer = selectContainer;
-window.openSpawnItemModal = openSpawnItemModal;
-window.deleteContainerItem = deleteContainerItem;
-window.updateItemQty = updateItemQty;
 window.showToast = showToast;
