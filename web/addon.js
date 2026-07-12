@@ -306,7 +306,7 @@ async function fetchDiagnostics() {
     diagnosticsTableBody.innerHTML = onlinePlayers.map(p => {
       // Find matching player by character_id or matching character name to show correct time left
       const pName = p.name || p.characterName || 'Unknown';
-      const pId = p.characterId || p.id || pName;
+      const pId = (p.characterId || p.id || pName).toString();
       const activeSeconds = activeMap[pId] || activeMap[pName] || 0;
       
       const activeMin = Math.floor(activeSeconds / 60);
