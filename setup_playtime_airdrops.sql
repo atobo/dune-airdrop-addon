@@ -440,9 +440,11 @@ BEGIN
       IF v_track.character_id IS NOT NULL THEN
         -- Calculate seconds passed since last save/update
         v_delta_seconds := EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_track.last_active_at))::INT;
-        
-        -- Limit delta to 120 seconds per save to avoid offline time-jumps
-        IF v_delta_seconds > 0 AND v_delta_seconds < 120 THEN
+
+        -- Cap delta seconds to a maximum of 60 seconds per check to prevent abnormal offline time-jumps
+        IF v_delta_seconds > 0 THEN
+          v_delta_seconds := LEAST(60, v_delta_seconds);
+          
           -- AFK check logic
           v_dist := SQRT(POWER(v_x - v_track.last_x, 2) + POWER(v_y - v_track.last_y, 2) + POWER(v_z - v_track.last_z, 2));
           v_xp_diff := v_curr_xp - v_track.last_xp;
@@ -479,11 +481,6 @@ BEGIN
             SET last_active_at = CURRENT_TIMESTAMP 
             WHERE character_id = NEW.id;
           END IF;
-        ELSE
-          -- Update timestamp without adding playtime if time jump is too large (e.g. initial login)
-          UPDATE dune.bot_active_playtime 
-          SET last_active_at = CURRENT_TIMESTAMP 
-          WHERE character_id = NEW.id;
         END IF;
       ELSE
         -- Initialize playtime record for new character, backdating last_active_at by 5 seconds to jumpstart tracking delta
