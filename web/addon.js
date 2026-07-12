@@ -233,7 +233,7 @@ async function fetchDiagnostics() {
 
   try {
     const result = await window.DuneAddon.request("leadership.players.list");
-    const players = result.players || result || [];
+    const players = Array.isArray(result) ? result : (result && Array.isArray(result.players) ? result.players : []);
 
     // Filter to only online players, checking multiple possible status structures
     const onlinePlayers = players.filter(p => {
@@ -301,7 +301,7 @@ async function fetchPendingAirdrops() {
               ORDER BY bpd.created_at DESC`
     });
 
-    pendingAirdropsData = list || [];
+    pendingAirdropsData = Array.isArray(list) ? list : [];
     renderPendingAirdrops();
 
     // Populate filter dropdown
