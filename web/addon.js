@@ -242,7 +242,7 @@ async function fetchDiagnostics() {
 
   try {
     const result = await window.DuneAddon.request("leadership.players.list");
-    const players = Array.isArray(result) ? result : (result && Array.isArray(result.players) ? result.players : []);
+    const players = result && Array.isArray(result.rows) ? result.rows : (Array.isArray(result) ? result : (result && Array.isArray(result.players) ? result.players : []));
 
     // Filter to only online players, checking multiple possible status structures
     const onlinePlayers = players.filter(p => {
@@ -259,14 +259,21 @@ async function fetchDiagnostics() {
       return;
     }
 
-    // Try to get playtime details from active_playtime table to match nextMin playtime tracking
     let activeMap = {};
     try {
-      const activeData = await window.DuneAddon.request("database.query", {
+      const activeRes = await window.DuneAddon.request("database.query", {
         query: `SELECT character_id, active_seconds FROM dune.bot_active_playtime`
       });
-      if (activeData && activeData.length > 0) {
-        activeData.forEach(row => {
+      let activeRows = [];
+      if (Array.isArray(activeRes)) {
+        activeRows = activeRes;
+      } else if (activeRes && Array.isArray(activeRes.rows)) {
+        activeRows = activeRes.rows;
+      } else if (activeRes && Array.isArray(activeRes.result)) {
+        activeRows = activeRes.result;
+      }
+      if (activeRows.length > 0) {
+        activeRows.forEach(row => {
           activeMap[row.character_id] = row.active_seconds;
         });
       }
@@ -310,7 +317,16 @@ async function fetchPendingAirdrops() {
               ORDER BY bpd.created_at DESC`
     });
 
-    pendingAirdropsData = Array.isArray(list) ? list : [];
+    let pendingRows = [];
+    if (Array.isArray(list)) {
+      pendingRows = list;
+    } else if (list && Array.isArray(list.rows)) {
+      pendingRows = list.rows;
+    } else if (list && Array.isArray(list.result)) {
+      pendingRows = list.result;
+    }
+
+    pendingAirdropsData = pendingRows;
     renderPendingAirdrops();
 
     // Populate filter dropdown
