@@ -205,20 +205,13 @@ async function fetchDiagnostics() {
   if (isSandboxMode) return;
 
   try {
-    const players = await window.DuneAddon.request("database.query", {
-      query: `SELECT 
-                ps.character_name AS name,
-                COALESCE(act.map, 'Unknown') AS map,
-                COALESCE(bp.active_seconds, 0) AS active_seconds
-              FROM dune.player_state ps
-              LEFT JOIN dune.actors act ON ps.player_pawn_id = act.id
-              LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id
-              WHERE ps.player_pawn_id IS NOT NULL 
-                AND ps.online_status IS NOT NULL 
-                AND (LOWER(ps.online_status::text) = 'online' OR LOWER(ps.online_status::text) = 'true')`
-    });
+    const result = await window.DuneAddon.request("leadership.players.list");
+    const players = result.players || result || [];
 
-    if (!players || players.length === 0) {
+    // Filter to only online players
+    const onlinePlayers = players.filter(p => p.status === 'Online');
+
+    if (!onlinePlayers || onlinePlayers.length === 0) {
       diagnosticsTableBody.innerHTML = `
         <tr>
           <td colspan="4" class="py-4 text-center italic text-slate-500">No online players detected.</td>
@@ -227,17 +220,37 @@ async function fetchDiagnostics() {
       return;
     }
 
-    diagnosticsTableBody.innerHTML = players.map(p => {
-      const activeMin = Math.floor(p.active_seconds / 60);
+    // Try to get playtime details from active_playtime table to match nextMin playtime tracking
+    let activeMap = {};
+    try {
+      const activeData = await window.DuneAddon.request("database.query", {
+        query: `SELECT character_id, active_seconds FROM dune.bot_active_playtime`
+      });
+      if (activeData && activeData.length > 0) {
+        activeData.forEach(row => {
+          activeMap[row.character_id] = row.active_seconds;
+        });
+      }
+    } catch (dbErr) {
+      console.warn("Could not fetch active playtime seconds:", dbErr);
+    }
+
+    diagnosticsTableBody.innerHTML = onlinePlayers.map(p => {
+      // Find matching player by character_id or matching character name to show correct time left
+      const pName = p.name || p.characterName || 'Unknown';
+      const pId = p.characterId || p.id || pName;
+      const activeSeconds = activeMap[pId] || activeMap[pName] || 0;
+      
+      const activeMin = Math.floor(activeSeconds / 60);
       const limitMin = parseInt(playtimeIntervalInput.value) || 60;
       const nextMin = Math.max(0, limitMin - activeMin);
 
       return `
         <tr class="border-b border-slate-900/40 hover:bg-slate-900/20 font-mono">
-          <td class="py-2 text-slate-300">${p.name}</td>
+          <td class="py-2 text-slate-300">${pName}</td>
           <td class="py-2 text-slate-400">${activeMin}m / ${limitMin}m</td>
           <td class="py-2 text-slate-400">${nextMin}m left</td>
-          <td class="py-2 text-right text-slate-500">${p.map}</td>
+          <td class="py-2 text-right text-slate-500">${p.map || 'Unknown'}</td>
         </tr>
       `;
     }).join('');
