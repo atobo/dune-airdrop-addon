@@ -51,11 +51,15 @@ def run_playtime_tick():
             if interval_min < 1:
                 interval_min = 60
 
+            min_dist = float(config.get('playtime_distance', 0.0))
+            min_xp = int(config.get('playtime_xp', 0))
+
             # 2. Fetch all online players from dune.player_state (casting connection status ENUM to TEXT)
             cur.execute("""
-                SELECT player_pawn_id, account_id, character_name 
-                FROM dune.player_state 
-                WHERE LOWER(online_status::text) = 'online' OR LOWER(online_status::text) = 'true';
+                SELECT ps.player_pawn_id, ps.account_id, ps.character_name, a.transform
+                FROM dune.player_state ps
+                LEFT JOIN dune.actors a ON a.id = ps.player_pawn_id::text
+                WHERE LOWER(ps.online_status::text) = 'online' OR LOWER(ps.online_status::text) = 'true';
             """)
             online_players = cur.fetchall()
 
@@ -63,9 +67,24 @@ def run_playtime_tick():
                 char_id = str(player['player_pawn_id'])
                 account_id = player['account_id']
                 name = player['character_name']
+                transform = player['transform']
+
+                # Extract translation coordinates safely from transform array
+                x, y, z = 0.0, 0.0, 0.0
+                if transform and len(transform) >= 3:
+                    try:
+                        x = float(transform[0])
+                        y = float(transform[1])
+                        z = float(transform[2])
+                    except Exception:
+                        pass
 
                 # 3. Check if playtime tracking record exists
-                cur.execute("SELECT active_seconds, last_xp FROM dune.bot_active_playtime WHERE character_id = %s;", (char_id,))
+                cur.execute("""
+                    SELECT active_seconds, last_xp, last_x, last_y, last_z 
+                    FROM dune.bot_active_playtime 
+                    WHERE character_id = %s;
+                """, (char_id,))
                 track_row = cur.fetchone()
 
                 # Fetch current XP dynamically
@@ -82,11 +101,33 @@ def run_playtime_tick():
                 if not track_row:
                     # Initialize playtime record
                     cur.execute("""
-                        INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_active_at)
-                        VALUES (%s, %s, %s, NOW());
-                    """, (char_id, TICK_INTERVAL, curr_xp))
+                        INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_x, last_y, last_z, last_active_at)
+                        VALUES (%s, 0, %s, %s, %s, %s, NOW());
+                    """, (char_id, curr_xp, x, y, z))
                 else:
-                    accumulated = track_row['active_seconds'] + TICK_INTERVAL
+                    # Enforce AFK validation checks if config thresholds are set > 0
+                    is_active = False
+                    if min_dist == 0.0 and min_xp == 0:
+                        is_active = True
+                    else:
+                        # Calculate distance offset
+                        last_x = float(track_row['last_x'] or 0.0)
+                        last_y = float(track_row['last_y'] or 0.0)
+                        last_z = float(track_row['last_z'] or 0.0)
+                        dist = ((x - last_x)**2 + (y - last_y)**2 + (z - last_z)**2)**0.5
+                        
+                        # Calculate XP offset
+                        last_xp = int(track_row['last_xp'] or 0)
+                        xp_diff = curr_xp - last_xp
+
+                        if min_dist > 0.0 and dist >= min_dist:
+                            is_active = True
+                        if min_xp > 0 and xp_diff >= min_xp:
+                            is_active = True
+
+                    accumulated = track_row['active_seconds']
+                    if is_active:
+                        accumulated += TICK_INTERVAL
 
                     # If playtime target is met, trigger reward roll
                     if accumulated >= (interval_min * 60):
@@ -96,9 +137,9 @@ def run_playtime_tick():
 
                     cur.execute("""
                         UPDATE dune.bot_active_playtime 
-                        SET active_seconds = %s, last_xp = %s, last_active_at = NOW() 
+                        SET active_seconds = %s, last_xp = %s, last_x = %s, last_y = %s, last_z = %s, last_active_at = NOW() 
                         WHERE character_id = %s;
-                    """, (accumulated, curr_xp, char_id))
+                    """, (accumulated, curr_xp, x, y, z, char_id))
 
                 # 4. Check for daily/weekly login streaks and deliver pending drops instantly
                 cur.execute("SELECT dune.fn_check_daily_weekly_rewards(%s, %s);", (account_id, char_id))

@@ -185,16 +185,11 @@ async function loadSettings() {
 }
 
 function toggleActivitySliders() {
-  const isDaemon = document.getElementById('useDaemonToggle').checked;
+  // Keep sliders visible at all times since the Python daemon will enforce the activity checks as well.
   const distWrapper = document.getElementById('afkDistanceWrapper');
   const xpWrapper = document.getElementById('afkXpWrapper');
-  if (isDaemon) {
-    if (distWrapper) distWrapper.style.display = 'none';
-    if (xpWrapper) xpWrapper.style.display = 'none';
-  } else {
-    if (distWrapper) distWrapper.style.display = 'flex';
-    if (xpWrapper) xpWrapper.style.display = 'flex';
-  }
+  if (distWrapper) distWrapper.style.display = 'flex';
+  if (xpWrapper) xpWrapper.style.display = 'flex';
 }
 
 async function handleSaveAllSettings() {
