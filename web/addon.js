@@ -84,7 +84,8 @@ function setupMultipliersSync() {
       input.value = slider.value;
     });
     input.addEventListener('input', () => {
-      let val = parseFloat(input.value) || min;
+      let val = parseFloat(input.value);
+      if (isNaN(val)) val = min;
       val = Math.max(min, Math.min(max, val));
       slider.value = val;
     });
@@ -142,8 +143,8 @@ async function loadSettings() {
     
     // Load playtime inputs
     document.getElementById('playtimeEnabledToggle').checked = mults.playtime_enabled !== undefined ? mults.playtime_enabled : true;
-    playtimeIntervalInput.value = mults.playtime_interval || 60;
-    playtimeIntervalSlider.value = mults.playtime_interval || 60;
+    playtimeIntervalInput.value = mults.playtime_interval !== undefined ? mults.playtime_interval : 60;
+    playtimeIntervalSlider.value = mults.playtime_interval !== undefined ? mults.playtime_interval : 60;
     playtimeDistanceInput.value = mults.playtime_distance !== undefined ? mults.playtime_distance : 10.0;
     playtimeDistanceSlider.value = mults.playtime_distance !== undefined ? mults.playtime_distance : 10.0;
     playtimeXpInput.value = mults.playtime_xp !== undefined ? mults.playtime_xp : 1;
