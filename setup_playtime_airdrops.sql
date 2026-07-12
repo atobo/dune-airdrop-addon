@@ -2,7 +2,8 @@
 -- Run this SQL on your Dune Awakening self-hosted PostgreSQL database.
 
 -- 1. Create playtime tracking table (supports coordinates, XP, anti-AFK validation, daily and weekly streaks)
-CREATE TABLE IF NOT EXISTS dune.bot_active_playtime (
+DROP TABLE IF EXISTS dune.bot_active_playtime CASCADE;
+CREATE TABLE dune.bot_active_playtime (
   character_id TEXT PRIMARY KEY,
   active_seconds INT DEFAULT 0,
   last_xp BIGINT DEFAULT 0,
