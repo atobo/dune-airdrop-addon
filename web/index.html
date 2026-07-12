@@ -1,47 +1,671 @@
-<!doctype html>
-<html lang="en" data-addon-id="my-dune-addon">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Dune Addon</title>
-    <link rel="stylesheet" href="./addon.css" />
-  </head>
-  <body>
-    <main class="shell">
-      <header class="header">
-        <div>
-          <p class="eyebrow">Community Addon</p>
-          <h1>My Dune Addon</h1>
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100" data-addon-id="dune-airdrop-addon">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arrakis Settings & Airdrops</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+            mono: ['Orbitron', 'monospace'],
+          },
+          colors: {
+            dune: {
+              50: '#fffbeb',
+              100: '#fef3c7',
+              500: '#f59e0b',
+              600: '#d97706',
+              700: '#b45309',
+              800: '#92400e',
+              950: '#0c0702',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Glassmorphic scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.5);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(217, 119, 6, 0.3);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(217, 119, 6, 0.6);
+    }
+    .neon-border {
+      box-shadow: 0 0 15px rgba(217, 119, 6, 0.15), inset 0 0 15px rgba(217, 119, 6, 0.05);
+      border: 1px solid rgba(217, 119, 6, 0.25);
+    }
+    .neon-text-orange {
+      text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+    }
+    .neon-glow-orange {
+      box-shadow: 0 0 25px rgba(245, 158, 11, 0.25);
+    }
+    body {
+      background: radial-gradient(circle at 50% 0%, rgba(217, 119, 6, 0.08) 0%, rgba(15, 23, 42, 0) 70%), #030712;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col antialiased">
+
+  <!-- Header -->
+  <header class="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center neon-glow-orange">
+          <svg class="h-5 w-5 text-slate-950 font-bold" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
         </div>
-        <button id="refreshPlayers" type="button">Load Players</button>
-      </header>
+        <div>
+          <h1 class="text-xl font-bold font-mono tracking-wider text-amber-500 neon-text-orange">ARRAKIS MANAGER</h1>
+          <p class="text-xs text-slate-500 tracking-widest font-mono">STANDALONE CONSOLE ADDON</p>
+        </div>
+        <!-- Navigation Tabs -->
+        <nav class="flex space-x-2 ml-8 border-l border-slate-900 pl-8">
+          <button id="tabBlueprintBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition text-slate-400 hover:text-slate-200">
+            BLUEPRINTS
+          </button>
+          <button id="tabSettingsBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition bg-amber-500 text-slate-950 neon-glow-orange">
+            AIRDROPS & SETTINGS
+          </button>
+          <button id="tabLootBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition text-slate-400 hover:text-slate-200">
+            CONTAINERS
+          </button>
+        </nav>
+      </div>
+      <div class="flex items-center space-x-4">
+        <span id="connectionStatusBadge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 font-mono">
+          Bridge Sandbox
+        </span>
+      </div>
+    </div>
+  </header>
 
-      <section class="panel">
-        <h2>Player Snapshot</h2>
-        <p class="muted">
-          This sample reads player data through the console bridge. It needs the
-          <code>players:read</code> permission.
-        </p>
-        <div id="players" class="grid" aria-live="polite"></div>
+  <!-- Main Content Layout (Blueprint View) -->
+  <main id="blueprintView" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6 overflow-hidden">
+    
+    <!-- Left Column: Upload, Details & Transforms -->
+    <div class="w-full lg:w-5/12 flex flex-col gap-6 overflow-y-auto pr-1">
+      <!-- Source Blueprint -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
+          <span class="mr-2">⚡</span> Source Blueprint
+        </h2>
+        <div id="dropzone" class="border-2 border-dashed border-slate-800 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:border-amber-500/50 transition duration-200">
+          <svg class="h-10 w-10 text-slate-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          <span class="text-sm font-medium text-slate-300">Drop blueprint JSON here or click to browse</span>
+          <span class="text-xs text-slate-500 mt-1">Accepts raw exported .json files</span>
+          <input type="file" id="fileInput" class="hidden" accept=".json" />
+        </div>
+        <div class="mt-4 flex items-center justify-between">
+          <span class="text-xs text-slate-500 font-mono">OR PASTE RAW JSON BELOW</span>
+          <button id="loadDemoBtn" class="text-xs text-amber-500 hover:text-amber-400 font-mono underline">Load Demo Blueprint</button>
+        </div>
+        <textarea id="jsonInput" placeholder="Paste blueprint JSON here..." class="mt-2 w-full h-32 bg-slate-950/80 border border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-300 focus:outline-none focus:border-amber-500/50 resize-none"></textarea>
+        <button id="parseBtn" class="mt-4 w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-2 px-4 rounded-lg font-mono tracking-wider transition duration-150 ease-in-out">
+          PARSE BLUEPRINT
+        </button>
       </section>
 
-      <section class="panel">
-        <h2>Read-Only Query</h2>
-        <p class="muted">
-          This sample runs a read-only SQL query through the console bridge. It
-          needs the <code>database:read</code> permission.
-        </p>
-        <button id="runQuery" type="button">Run Sample Query</button>
-        <pre id="queryResult" class="output">No query has run yet.</pre>
+      <!-- Offset & Rotation Modifiers -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
+          <span class="mr-2">⚙️</span> Coordinate Modifiers
+        </h2>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-mono text-slate-400 mb-1">Offset X</label>
+            <input type="number" id="offsetX" value="0" step="100" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-mono text-slate-400 mb-1">Offset Y</label>
+            <input type="number" id="offsetY" value="0" step="100" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-mono text-slate-400 mb-1">Offset Z</label>
+            <input type="number" id="offsetZ" value="0" step="100" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label class="block text-xs font-mono text-slate-400 mb-1">Rotation Offset (Yaw)</label>
+            <input type="number" id="offsetRot" value="0" min="-180" max="180" step="15" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-mono text-slate-400 mb-1">Building Name</label>
+            <input type="text" id="blueprintName" placeholder="My Custom Building" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50 font-mono" />
+          </div>
+        </div>
       </section>
 
-      <section class="panel">
-        <h2>Addon Log</h2>
-        <pre id="log" class="output">Ready.</pre>
+      <!-- Stats Overview -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex-1 min-h-[220px]">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
+          <span class="mr-2">📊</span> Blueprint Summary
+        </h2>
+        <div id="statsSummary" class="text-slate-400 text-sm space-y-4">
+          <p class="italic text-slate-500 text-xs">No blueprint parsed yet. Upload a JSON file to inspect statistics.</p>
+        </div>
       </section>
-    </main>
 
-    <script src="./dune-addon-bridge.js"></script>
-    <script src="./addon.js"></script>
-  </body>
+      <!-- Buildings Management -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[260px]">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">🏰</span> In-World Buildings
+          </h2>
+          <button id="refreshBuildingsBtn" class="px-2 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded text-xs font-mono text-slate-300 transition">
+            REFRESH
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto scrollbar-thin max-h-56 pr-1">
+          <table class="w-full text-left text-xs font-mono border-collapse">
+            <thead>
+              <tr class="text-slate-500 border-b border-slate-800/80">
+                <th class="pb-2 font-semibold">ID</th>
+                <th class="pb-2 font-semibold">Map</th>
+                <th class="pb-2 font-semibold">Owner</th>
+                <th class="pb-2 font-semibold">Pieces</th>
+                <th class="pb-2 font-semibold text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="buildingsTableBody" class="text-slate-300 divide-y divide-slate-900/50">
+              <tr>
+                <td colspan="5" class="py-4 text-center italic text-slate-500">Connecting to server...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Visualizer & SQL Generator -->
+    <div class="flex-1 flex flex-col gap-6 overflow-hidden">
+      <!-- Visualizer (Top Half) -->
+      <section class="flex-1 bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[300px] overflow-hidden">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">🪐</span> Top-Down Schematic Preview
+          </h2>
+          <div class="flex items-center space-x-2 text-xs font-mono text-slate-400">
+            <button id="resetViewBtn" class="px-2 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded transition">Reset View</button>
+            <span id="coordDisplay">X: 0.00, Y: 0.00</span>
+          </div>
+        </div>
+        <div class="flex-1 bg-slate-950 rounded-lg relative overflow-hidden border border-slate-900">
+          <canvas id="visualizerCanvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
+          <div class="absolute bottom-2 left-2 bg-slate-950/90 border border-slate-800 px-2 py-1 rounded text-[10px] font-mono text-slate-400 pointer-events-none flex space-x-3">
+            <span class="flex items-center"><span class="w-2.5 h-2.5 bg-amber-500 rounded-full mr-1 inline-block"></span> Structural</span>
+            <span class="flex items-center"><span class="w-2.5 h-2.5 bg-teal-500 rounded-full mr-1 inline-block"></span> Placeable</span>
+            <span class="flex items-center"><span class="w-2.5 h-2.5 bg-rose-500 rounded-full mr-1 inline-block"></span> Pentashield</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SQL Generator (Bottom Half) -->
+      <section class="h-2/5 bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col overflow-hidden min-h-[260px]">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">📜</span> Database SQL Generator
+          </h2>
+          <div class="flex items-center space-x-3">
+            <button id="copySqlBtn" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
+              COPY SQL
+            </button>
+            <button id="injectBtn" disabled class="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
+              INJECT ITEM
+            </button>
+            <button id="constructBtn" disabled class="bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
+              BUILD IN-WORLD
+            </button>
+          </div>
+        </div>
+        
+        <!-- Parameter Form -->
+        <div class="grid grid-cols-2 gap-3 mb-3 bg-slate-950/40 p-2.5 rounded border border-slate-900">
+          <div>
+            <label class="block text-[10px] font-mono text-slate-500 uppercase mb-0.5">Target Player</label>
+            <div class="flex space-x-1.5">
+              <select id="playerSelect" class="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 font-mono w-full">
+                <option value="">Select character...</option>
+              </select>
+              <input type="text" id="playerPawnId" placeholder="e.g. Character_Online_0" class="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 font-mono hidden" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-[10px] font-mono text-slate-500 uppercase mb-0.5">Custom Item Name</label>
+            <input type="text" id="customItemName" placeholder="Leave blank to use blueprint name" class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 font-mono" />
+          </div>
+        </div>
+
+        <div class="flex-1 bg-slate-950/80 rounded-lg border border-slate-800 p-3 font-mono text-xs overflow-y-auto text-amber-200/90 whitespace-pre scrollbar-thin">
+          <code id="sqlOutput">-- SQL output will be generated here upon parsing.</code>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Airdrops & Settings Management Layout -->
+  <main id="settingsView" class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6 overflow-hidden">
+    <!-- Left Column: Multipliers & Scaling -->
+    <div class="w-full lg:w-7/12 flex flex-col gap-6 overflow-y-auto pr-1">
+      
+      <!-- Global Server Multipliers -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+        <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-2">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">⚙️</span> Global Server Multipliers
+          </h2>
+          <button onclick="handleSaveAllSettings()" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-1 px-4 rounded text-xs font-mono tracking-wider transition">
+            SAVE ALL SETTINGS
+          </button>
+        </div>
+        
+        <div class="space-y-4 font-mono">
+          <!-- XP Multiplier -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-amber-500 text-xs">✨</span>
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">XP Multiplier</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="xpMultiplierInput" min="0.1" max="100" step="0.1" value="1.0" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="range" id="xpMultiplierSlider" min="0.1" max="50" step="0.5" value="1.0" class="flex-1 accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            </div>
+          </div>
+
+          <!-- Harvesting Multiplier -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-amber-500 text-xs">🌾</span>
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Harvest Multiplier</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="harvestMultiplierInput" min="0.1" max="100" step="0.1" value="1.0" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="range" id="harvestMultiplierSlider" min="0.1" max="50" step="0.5" value="1.0" class="flex-1 accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Airdrop & Playtime Rules -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 border-b border-slate-800 pb-2 flex items-center">
+          <span class="mr-2">⏱️</span> Playtime Airdrop Settings
+        </h2>
+        <div class="space-y-4 font-mono">
+          <!-- Playtime Interval -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-amber-500 text-xs">🕒</span>
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Active Playtime Required</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeIntervalInput" min="1" max="120" value="60" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">min</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="range" id="playtimeIntervalSlider" min="1" max="120" value="60" class="flex-1 accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            </div>
+          </div>
+
+          <!-- AFK Distance Threshold -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-amber-500 text-xs">🏃</span>
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">AFK Movement Threshold</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeDistanceInput" min="0" max="100" value="10" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">m</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="range" id="playtimeDistanceSlider" min="0" max="100" value="10" class="flex-1 accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            </div>
+          </div>
+
+          <!-- AFK XP Min Check -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-amber-500 text-xs">📈</span>
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">AFK XP Activity Threshold</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeXpInput" min="0" max="1000" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-xs text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">XP</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="range" id="playtimeXpSlider" min="0" max="1000" step="5" value="1" class="flex-1 accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Playtime Multipliers per Tier -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 border-b border-slate-800 pb-2 flex items-center">
+          <span class="mr-2">🎁</span> Playtime Airdrop scaling per Tier
+        </h2>
+        <div class="space-y-4 font-mono text-xs max-h-[600px] overflow-y-auto pr-1">
+          <!-- T0 Multiplier -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Tier 0 (Level 0-9) Multiplier</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeMultiplierT0Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="playtimeMultiplierT0Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+
+          <!-- T1 Multiplier -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Tier 1 (Level 10-19) Multiplier</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeMultiplierT1Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="playtimeMultiplierT1Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+
+          <!-- T2 Multiplier -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Tier 2 (Level 20-34) Multiplier</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeMultiplierT2Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="playtimeMultiplierT2Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+
+          <!-- T3 Multiplier -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Tier 3 (Level 35-49) Multiplier</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeMultiplierT3Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="playtimeMultiplierT3Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+
+          <!-- T4 Multiplier -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Tier 4 (Level 50-79) Multiplier</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeMultiplierT4Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="playtimeMultiplierT4Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+
+          <!-- T5 Multiplier -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Tier 5 (Level 80-149) Multiplier</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeMultiplierT5Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="playtimeMultiplierT5Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+
+          <!-- T6 Multiplier -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 6 (Level 150+) Multiplier</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="playtimeMultiplierT6Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">x</span>
+              </div>
+            </div>
+            <input type="range" id="playtimeMultiplierT6Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Diagnostics & Deliveries -->
+    <div class="w-full lg:w-5/12 flex flex-col gap-6 overflow-y-auto pr-1">
+      <!-- Active Players Diagnostics -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[360px]">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
+          <span class="mr-2">📡</span> Online Diagnostics
+        </h2>
+        <div class="flex-1 overflow-y-auto scrollbar-thin max-h-[300px] pr-1">
+          <table class="w-full text-left text-xs font-mono border-collapse">
+            <thead>
+              <tr class="text-slate-500 border-b border-slate-800/80">
+                <th class="pb-2 font-semibold">Name</th>
+                <th class="pb-2 font-semibold">Playtime</th>
+                <th class="pb-2 font-semibold">Activity</th>
+                <th class="pb-2 font-semibold text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody id="diagnosticsTableBody" class="text-slate-300 divide-y divide-slate-900/50">
+              <tr>
+                <td colspan="4" class="py-4 text-center italic text-slate-500">Connecting to server diagnostics...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Pending Airdrops List -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[160px]">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">🚚</span> Pending Airdrops Queue
+          </h2>
+          <select id="airdropPlayerSelect" class="bg-slate-950 border border-slate-850 rounded px-2.5 py-1 text-xs font-mono text-slate-300 focus:outline-none focus:border-amber-500/50">
+            <option value="all">All Characters</option>
+          </select>
+        </div>
+        <div class="flex-1 overflow-y-auto scrollbar-thin max-h-[100px] pr-1">
+          <table class="w-full text-left text-xs font-mono border-collapse">
+            <thead>
+              <tr class="text-slate-500 border-b border-slate-800/80">
+                <th class="pb-2 font-semibold">Character</th>
+                <th class="pb-2 font-semibold">Airdrop Item</th>
+                <th class="pb-2 font-semibold text-right">Qty</th>
+              </tr>
+            </thead>
+            <tbody id="pendingAirdropsTableBody" class="text-slate-300 divide-y divide-slate-900/50">
+              <tr>
+                <td colspan="3" class="py-4 text-center italic text-slate-500">Connecting to server queue...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Loot & Inventory Management Layout -->
+  <main id="lootView" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6 overflow-hidden">
+    <!-- Left Column: Containers List & Search -->
+    <div class="w-full lg:w-5/12 flex flex-col gap-6 overflow-y-auto pr-1">
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[500px]">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
+            <span class="mr-2">🎒</span> In-World Containers
+          </h2>
+          <button id="refreshLootBtn" class="px-2 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded text-xs font-mono text-slate-300 transition">
+            REFRESH
+          </button>
+        </div>
+        
+        <!-- Search and filters -->
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label class="block text-[10px] font-mono text-slate-500 uppercase mb-0.5">Filter by Class</label>
+            <input type="text" id="lootSearchInput" placeholder="e.g. StorageContainer" class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-amber-500/50" />
+          </div>
+          <div>
+            <label class="block text-[10px] font-mono text-slate-500 uppercase mb-0.5">Filter by Map</label>
+            <select id="lootMapSelect" class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-amber-500/50">
+              <option value="">All Regions</option>
+              <option value="HaggaBasin">Hagga Basin</option>
+              <option value="DeepDesert">Deep Desert</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Containers list -->
+        <div class="flex-1 overflow-y-auto scrollbar-thin max-h-[400px]">
+          <table class="w-full text-left text-xs font-mono border-collapse">
+            <thead>
+              <tr class="text-slate-500 border-b border-slate-800/80">
+                <th class="pb-2 font-semibold">ID</th>
+                <th class="pb-2 font-semibold">Name / Type</th>
+                <th class="pb-2 font-semibold">Owner</th>
+                <th class="pb-2 font-semibold text-center">Items</th>
+              </tr>
+            </thead>
+            <tbody id="lootContainersTableBody" class="text-slate-300 divide-y divide-slate-900/50">
+              <tr>
+                <td colspan="4" class="py-4 text-center italic text-slate-500">Connecting to server...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sync Controls -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 flex items-center">
+          <span class="mr-2">🔄</span> Orchestration Sync
+        </h2>
+        <div class="grid grid-cols-2 gap-3 font-mono">
+          <button onclick="handleForceSyncLoot()" class="py-2.5 bg-rose-700 hover:bg-rose-600 text-slate-100 font-bold rounded-lg text-xs tracking-wider transition">
+            FORCE APPLY & RESTART
+          </button>
+          <button onclick="handleClearLootQueue()" class="py-2.5 bg-slate-850 hover:bg-slate-800 border border-slate-850 text-slate-300 font-bold rounded-lg text-xs tracking-wider transition">
+            CLEAR PENDING EDITS
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Container Contents Grid -->
+    <div class="w-full lg:w-7/12 flex flex-col gap-6 overflow-y-auto pr-1">
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[500px] overflow-y-auto">
+        <div id="containerHeader" class="border-b border-slate-800/80 pb-4 mb-4">
+          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-1">
+            📦 Container Details
+          </h2>
+          <p class="text-xs text-slate-400 font-mono">Select a container from the list to view and manage its items.</p>
+        </div>
+
+        <!-- Items grid container -->
+        <div id="containerInventoryGrid" class="flex-1 overflow-y-auto scrollbar-thin pr-1 grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div class="col-span-full py-12 text-center text-slate-500 font-mono italic">
+            No container selected.
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Spawn Item Modal -->
+  <div id="spawnItemModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+      <h3 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-4 flex items-center">
+        <span>➕ Spawn Item In Container</span>
+      </h3>
+      <div class="space-y-4 font-mono text-xs">
+        <div>
+          <label class="block text-[10px] text-slate-500 uppercase mb-1">Item Template / Class ID</label>
+          <input type="text" id="spawnItemTemplateInput" list="validItemTemplates" placeholder="Search or enter item template ID..." class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-amber-500/50" />
+          <datalist id="validItemTemplates"></datalist>
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-500 uppercase mb-1">Stack Size (Quantity)</label>
+          <input type="number" id="spawnItemQtyInput" value="1" min="1" class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-xs text-slate-300" />
+        </div>
+        <div class="flex space-x-3 pt-2">
+          <button id="spawnItemConfirmBtn" class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded transition">
+            SPAWN
+          </button>
+          <button id="spawnItemCancelBtn" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-750 transition">
+            CANCEL
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Progress Overlay -->
+  <div id="progressOverlay" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center z-50 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl flex flex-col items-center text-center">
+      <!-- Pulsing spinner -->
+      <div class="w-16 h-16 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin mb-6"></div>
+      <h3 class="font-mono text-sm font-semibold tracking-widest text-amber-500 uppercase mb-2">
+        ⚙️ Server Operation in Progress
+      </h3>
+      <p class="text-xs font-mono text-slate-400 mb-6 leading-relaxed">
+        The orchestrator is managing game server states to safely apply changes to the world. Please do not close this window.
+      </p>
+      <!-- Real-time status update console style -->
+      <div class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-[11px] text-green-400 text-left min-h-[80px] flex flex-col justify-end space-y-1 shadow-inner">
+        <div class="text-slate-600">&gt; Awaiting action...</div>
+        <div id="overlayStatus" class="font-bold">&gt; Initializing process...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification container -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 flex flex-col gap-2 z-50 pointer-events-none"></div>
+
+  <!-- Script tags -->
+  <script src="./dune-addon-bridge.js"></script>
+  <script src="blueprintParser.js"></script>
+  <script src="addon.js"></script>
+</body>
 </html>

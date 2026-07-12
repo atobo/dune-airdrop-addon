@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "my-dune-addon",
-  "name": "My Dune Addon",
-  "description": "A starter addon for Dune Docker Console.",
-  "author": "Your Name",
-  "version": "0.1.0",
+  "id": "dune-airdrop-addon",
+  "name": "Arrakis Settings & Airdrops",
+  "description": "Standalone manager for XP, harvest multipliers, player diagnostics, and playtime-based airdrop deliveries.",
+  "author": "Antigravity & atobo",
+  "version": "1.0.0",
   "type": "ui",
   "entry": {
-    "navigation": "My Addon",
+    "navigation": "Arrakis Manager",
     "path": "web/index.html"
   },
   "permissions": {
-    "players": ["read"],
-    "database": ["read"]
+    "database": ["read", "write"],
+    "players": ["read"]
   }
 }
