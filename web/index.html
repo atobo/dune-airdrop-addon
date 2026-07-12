@@ -112,17 +112,24 @@
               SAVE ALL SETTINGS
             </button>
           </div>
-          <div class="flex items-center gap-6 mt-1">
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="playtimeEnabledToggle" checked class="sr-only peer" />
-              <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
-              <span class="ml-2 font-mono text-[10px] text-slate-400">ENABLED</span>
-            </label>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="useDaemonToggle" class="sr-only peer" onchange="toggleActivitySliders()" />
-              <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
-              <span class="ml-2 font-mono text-[10px] text-slate-400">USE BACKGROUND DAEMON</span>
-            </label>
+          <div class="flex flex-col gap-2 mt-1">
+            <div class="flex items-center gap-6">
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="playtimeEnabledToggle" checked class="sr-only peer" />
+                <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
+                <span class="ml-2 font-mono text-[10px] text-slate-400">ENABLED</span>
+              </label>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="useDaemonToggle" class="sr-only peer" onchange="toggleActivitySliders()" />
+                <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
+                <span class="ml-2 font-mono text-[10px] text-slate-400">USE DAEMON (OPTIONAL)</span>
+              </label>
+            </div>
+            
+            <!-- Optional Daemon notice card -->
+            <div id="daemonNotice" class="bg-amber-950/10 border border-amber-900/30 rounded p-2.5 mt-1 font-mono text-[10px] text-slate-400 leading-relaxed">
+              <span class="text-amber-500 font-bold">ℹ️ DAEMON INFO:</span> This background worker is <span class="text-amber-400 font-bold">100% OPTIONAL</span>. By default, database triggers track playtime automatically on server saves. To configure steady 10s timer tracking, copy <code class="text-amber-500 bg-slate-950 px-1 py-0.5 rounded">dune_airdrop_worker.py</code> to your server container and run it. Detailed setup guides are inside <code class="text-amber-400">README.md</code>.
+            </div>
           </div>
         </div>
         <div class="space-y-4 font-mono">
