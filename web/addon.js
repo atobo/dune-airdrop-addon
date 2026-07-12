@@ -24,7 +24,7 @@ const airdropPlayerSelect = document.getElementById('airdropPlayerSelect');
 let pendingAirdropsData = [];
 
 // Determine if running inside the Dune Docker Console iframe
-const isSandboxMode = window.parent === window;
+const isSandboxMode = window.parent === window || !window.DuneAddon;
 
 // --- Initialize Bridge & UI ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -38,14 +38,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     connectionStatusBadge.textContent = 'Console Connected';
     connectionStatusBadge.className = connectionStatusBadge.className.replace('bg-amber-500/10 text-amber-500', 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20');
     
-    // Initial fetch of data
-    await loadSettings();
-    await fetchDiagnostics();
-    await fetchPendingAirdrops();
+    // Initial fetch of data wrapped in safe handlers to prevent page loading stalls
+    try {
+      await loadSettings();
+    } catch (e) {
+      console.error("Failed loading settings:", e);
+    }
+    
+    try {
+      await fetchDiagnostics();
+    } catch (e) {
+      console.error("Failed loading diagnostics:", e);
+    }
+
+    try {
+      await fetchPendingAirdrops();
+    } catch (e) {
+      console.error("Failed loading pending queue:", e);
+    }
     
     // Set up polling intervals
-    setInterval(fetchDiagnostics, 5000);
-    setInterval(fetchPendingAirdrops, 5000);
+    setInterval(async () => {
+      try {
+        await fetchDiagnostics();
+      } catch (e) {
+        console.error("Error polling diagnostics:", e);
+      }
+    }, 5000);
+
+    setInterval(async () => {
+      try {
+        await fetchPendingAirdrops();
+      } catch (e) {
+        console.error("Error polling pending deliveries:", e);
+      }
+    }, 5000);
   }
 });
 
