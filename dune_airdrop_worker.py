@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+import time
+import json
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+# Database credentials (aligned with dune-awakening-selfhost-docker settings)
+DB_HOST = "localhost"
+DB_PORT = 5432
+DB_NAME = "dune"
+DB_USER = "postgres"  # Using postgres superuser to ensure full access
+DB_PASS = "dune"      # Default self-host db password
+
+TICK_INTERVAL = 10     # Increment timer every 10 seconds
+
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASS
+        )
+        return conn
+    except Exception as e:
+        print(f"Error connecting to database: {e}")
+        return None
+
+def run_playtime_tick():
+    conn = get_db_connection()
+    if not conn:
+        return
+
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # 1. Load active configurations
+            cur.execute("SELECT config_value FROM dune.airdrop_addon_config WHERE config_key = 'airdrop_multipliers' LIMIT 1;")
+            config_row = cur.fetchone()
+            
+            if not config_row or not config_row['config_value']:
+                return
+                
+            config = config_row['config_value']
+            
+            # Ensure background daemon is enabled in dashboard settings
+            if not config.get('playtime_enabled', True) or not config.get('use_daemon', False):
+                return
+
+            interval_min = int(config.get('playtime_interval', 60))
+            if interval_min < 1:
+                interval_min = 60
+
+            # 2. Fetch all online players from dune.player_state
+            cur.execute("""
+                SELECT player_pawn_id, account_id, character_name 
+                FROM dune.player_state 
+                WHERE LOWER(online_status) = 'online' OR LOWER(online_status) = 'true';
+            """)
+            online_players = cur.fetchall()
+
+            for player in online_players:
+                char_id = str(player['player_pawn_id'])
+                account_id = player['account_id']
+                name = player['character_name']
+
+                # 3. Check if playtime tracking record exists
+                cur.execute("SELECT active_seconds, last_xp FROM dune.bot_active_playtime WHERE character_id = %s;", (char_id,))
+                track_row = cur.fetchone()
+
+                # Fetch current XP dynamically
+                cur.execute("""
+                    SELECT COALESCE((fe.components->'FLevelComponent'->1->>'TotalXPEarned')::bigint, 0) as xp
+                    FROM dune.actor_fgl_entities afe
+                    LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
+                    WHERE afe.actor_id = %s AND afe.slot_name = 'DuneCharacter'
+                    LIMIT 1;
+                """, (char_id,))
+                xp_row = cur.fetchone()
+                curr_xp = xp_row['xp'] if xp_row else 0
+
+                if not track_row:
+                    # Initialize playtime record
+                    cur.execute("""
+                        INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_active_at)
+                        VALUES (%s, %s, %s, NOW());
+                    """, (char_id, TICK_INTERVAL, curr_xp))
+                else:
+                    accumulated = track_row['active_seconds'] + TICK_INTERVAL
+
+                    # If playtime target is met, trigger reward roll
+                    if accumulated >= (interval_min * 60):
+                        print(f"[Airdrop Daemon] Rolling playtime rewards for {name} ({char_id})")
+                        cur.execute("SELECT dune.fn_roll_playtime_reward(%s, %s);", (account_id, char_id))
+                        accumulated = 0
+
+                    cur.execute("""
+                        UPDATE dune.bot_active_playtime 
+                        SET active_seconds = %s, last_xp = %s, last_active_at = NOW() 
+                        WHERE character_id = %s;
+                    """, (accumulated, curr_xp, char_id))
+
+                # 4. Check for daily/weekly login streaks and deliver pending drops instantly
+                cur.execute("SELECT dune.fn_check_daily_weekly_rewards(%s, %s);", (account_id, char_id))
+                cur.execute("SELECT dune.fn_deliver_playtime_airdrops(%s, %s);", (account_id, char_id))
+
+            conn.commit()
+    except Exception as e:
+        print(f"Error executing daemon tick: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+if __name__ == "__main__":
+    print("[Airdrop Daemon] Arrakis Airdrop Playtime Daemon started successfully.")
+    print(f"[Airdrop Daemon] Polling active players every {TICK_INTERVAL} seconds...")
+    while True:
+        try:
+            run_playtime_tick()
+        except KeyboardInterrupt:
+            print("\nShutting down daemon...")
+            break
+        except Exception as e:
+            print(f"Daemon loop encountered error: {e}")
+        time.sleep(TICK_INTERVAL)

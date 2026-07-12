@@ -130,6 +130,7 @@ async function loadSettings() {
       playtime_interval: 60, 
       playtime_distance: 10, 
       playtime_xp: 1,
+      use_daemon: false,
       daily_enabled: true,
       daily_multiplier_step: 0.5,
       daily_max_streak: 7,
@@ -143,6 +144,7 @@ async function loadSettings() {
     
     // Load playtime inputs
     document.getElementById('playtimeEnabledToggle').checked = mults.playtime_enabled !== undefined ? mults.playtime_enabled : true;
+    document.getElementById('useDaemonToggle').checked = mults.use_daemon !== undefined ? mults.use_daemon : false;
     playtimeIntervalInput.value = mults.playtime_interval !== undefined ? mults.playtime_interval : 60;
     playtimeIntervalSlider.value = mults.playtime_interval !== undefined ? mults.playtime_interval : 60;
     playtimeDistanceInput.value = mults.playtime_distance !== undefined ? mults.playtime_distance : 10.0;
@@ -174,8 +176,24 @@ async function loadSettings() {
       }
     }
 
+    // Trigger dynamic panels alignment on load
+    toggleActivitySliders();
+
   } catch (err) {
     showToast(`Failed to load settings: ${err.message}`, 'error');
+  }
+}
+
+function toggleActivitySliders() {
+  const isDaemon = document.getElementById('useDaemonToggle').checked;
+  const distWrapper = document.getElementById('afkDistanceWrapper');
+  const xpWrapper = document.getElementById('afkXpWrapper');
+  if (isDaemon) {
+    if (distWrapper) distWrapper.style.display = 'none';
+    if (xpWrapper) xpWrapper.style.display = 'none';
+  } else {
+    if (distWrapper) distWrapper.style.display = 'flex';
+    if (xpWrapper) xpWrapper.style.display = 'flex';
   }
 }
 
@@ -195,6 +213,7 @@ async function handleSaveAllSettings() {
 
     const payload = {
       playtime_enabled: document.getElementById('playtimeEnabledToggle').checked,
+      use_daemon: document.getElementById('useDaemonToggle').checked,
       playtime_interval: parseVal('playtimeIntervalInput', 60),
       playtime_distance: parseVal('playtimeDistanceInput', 10.0, true),
       playtime_xp: parseVal('playtimeXpInput', 1),
@@ -216,6 +235,7 @@ async function handleSaveAllSettings() {
       query: `INSERT INTO dune.airdrop_addon_config (config_key, config_value) 
               VALUES ('airdrop_multipliers', json_build_object(
                 'playtime_enabled', ${payload.playtime_enabled}::boolean,
+                'use_daemon', ${payload.use_daemon}::boolean,
                 'playtime_interval', ${payload.playtime_interval}::int,
                 'playtime_distance', ${payload.playtime_distance}::numeric,
                 'playtime_xp', ${payload.playtime_xp}::int,

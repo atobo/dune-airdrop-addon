@@ -406,6 +406,15 @@ BEGIN
       -- Load configurations
       SELECT config_value INTO v_config FROM dune.airdrop_addon_config WHERE config_key = 'airdrop_multipliers';
       IF v_config IS NOT NULL THEN
+        -- If background daemon is enabled, bypass database playtime trigger updates to avoid timing overlaps
+        IF COALESCE((v_config->>'use_daemon')::boolean, FALSE) = TRUE THEN
+          -- Exit early but still run daily/weekly claim checks
+          PERFORM dune.fn_check_daily_weekly_rewards(v_account_id, NEW.id);
+          -- Force deliver check
+          PERFORM dune.fn_deliver_playtime_airdrops(v_account_id, NEW.id);
+          RETURN NEW;
+        END IF;
+
         v_playtime_enabled := COALESCE((v_config->>'playtime_enabled')::boolean, TRUE);
         v_interval_min := COALESCE((v_config->>'playtime_interval')::int, 60);
         v_min_dist := COALESCE((v_config->>'playtime_distance')::double precision, 0.0);
