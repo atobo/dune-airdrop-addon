@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS dune.discord_bot_config (
 
 -- Insert default configurations if missing
 INSERT INTO dune.discord_bot_config (config_key, config_value) 
-VALUES (
+VALUES 
+(
   'airdrop_multipliers', 
   '{
     "playtime_enabled": true,
@@ -57,7 +58,11 @@ VALUES (
     "weekly_days_required": 5,
     "weekly_multiplier": 5.0
   }'::jsonb
-) 
+),
+(
+  'daemon_heartbeat',
+  '{"last_ping": "1970-01-01T00:00:00Z"}'::jsonb
+)
 ON CONFLICT (config_key) DO NOTHING;
 
 -- 4. Dynamic level and tier resolver
@@ -374,6 +379,8 @@ DECLARE
   v_delta_seconds INT;
   v_prev_active TIMESTAMP WITH TIME ZONE;
   v_config JSONB;
+  v_daemon JSONB;
+  v_last_ping TIMESTAMP WITH TIME ZONE;
   
   v_playtime_enabled BOOLEAN := TRUE;
   v_interval_min INT := 60;
@@ -391,6 +398,16 @@ DECLARE
   v_is_active BOOLEAN := FALSE;
   v_accumulated_seconds INT;
 BEGIN
+  -- Check daemon heartbeat
+  SELECT config_value INTO v_daemon FROM dune.discord_bot_config WHERE config_key = 'daemon_heartbeat';
+  IF v_daemon IS NOT NULL THEN
+    v_last_ping := (v_daemon->>'last_ping')::timestamp with time zone;
+    IF v_last_ping IS NOT NULL AND EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_last_ping)) < 120 THEN
+      -- Daemon is alive and handling tracking. Skip trigger execution to avoid double-counting.
+      RETURN NEW;
+    END IF;
+  END IF;
+
   -- Only track if player's online status is 'online'
   IF LOWER(NEW.online_status::text) = 'online' THEN
     -- Load configurations
