@@ -224,7 +224,12 @@ BEGIN
         v_item.template_id, 
         v_item.stack_size, 
         (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = v_inv_id), 
-        '{"FItemStackAndDurabilityStats": [[], {"DecayedMaxDurability": 0.0}]}'::jsonb, 
+        CASE 
+          WHEN v_item.quality_level > 0 OR v_item.stack_size = 1 THEN
+            '{"FCustomizationStats": [[], {}], "FItemStackAndDurabilityStats": [[], {"CurrentDurability": 1000, "MaxDurability": 1000, "DecayedMaxDurability": 1000}], "FWeaponItemStats": [[], {"CurrentAmmo": 0}]}'::jsonb
+          ELSE
+            '{"FItemStackAndDurabilityStats": [[], {"DecayedMaxDurability": 0.0}]}'::jsonb
+        END, 
         v_item.quality_level
       );
 
