@@ -112,6 +112,10 @@ DECLARE
   v_res_template_1 TEXT;
   v_res_template_2 TEXT;
   v_schem_template TEXT;
+  v_gear_quality INT;
+  v_res_qty_1 INT;
+  v_res_qty_2 INT;
+BEGIN
   -- Roll Gear (40% chance)
   IF RANDOM() <= 0.40 THEN
     SELECT template_id INTO v_gear_template 
