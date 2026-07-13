@@ -223,12 +223,12 @@ async function handleSaveAllSettings() {
     payload.playtime_multiplier = payload.playtime_multiplier_t6;
 
     // 1. Save Airdrops Config
+    const escapedJson = JSON.stringify(payload).replace(/'/g, "''");
     await window.DuneAddon.request("database.execute", {
       query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
-              VALUES ('airdrop_multipliers', $1::jsonb) 
+              VALUES ('airdrop_multipliers', '${escapedJson}'::jsonb) 
               ON CONFLICT (config_key) 
-              DO UPDATE SET config_value = EXCLUDED.config_value`,
-      params: [JSON.stringify(payload)]
+              DO UPDATE SET config_value = EXCLUDED.config_value`
     });
 
     showToast('All multipliers and settings saved successfully!', 'success');
