@@ -186,12 +186,19 @@ sqlOutput += `INSERT INTO dune.airdrop_loot_tables (tier, category, template_id,
 
 const valuesList = [];
 
+function getResourceSubcategory(id) {
+  const rawKeywords = ['ore', 'stone', 'sand', 'fiber', 'wood', 'water', 'raw', 'residue', 'spice', 'plant'];
+  if (rawKeywords.some(kw => id.toLowerCase().includes(kw))) return 'raw_resources';
+  return 'crafted_components';
+}
+
 for (let t = 0; t <= 6; t++) {
   // Resources
   gameItems.tiers[t].resources.forEach(r => {
     const weight = getResourceWeight(r.id, t);
     if (weight > 0) {
-      valuesList.push(`(${t}, 'resources', '${r.id}', ${weight})`);
+      const subcat = getResourceSubcategory(r.id);
+      valuesList.push(`(${t}, '${subcat}', '${r.id}', ${weight})`);
     }
   });
 
