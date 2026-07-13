@@ -141,9 +141,36 @@ def run_playtime_tick():
                         WHERE character_id = %s;
                     """, (accumulated, curr_xp, x, y, z, char_id))
 
-                # 4. Check for daily/weekly login streaks and deliver pending drops instantly
+                # 4. Check for daily/weekly login streaks
                 cur.execute("SELECT dune.fn_check_daily_weekly_rewards(%s, %s);", (account_id, char_id))
-                cur.execute("SELECT dune.fn_deliver_playtime_airdrops(%s, %s);", (account_id, char_id))
+                
+                # 5. Fetch any pending, unapplied deliveries for this account and grant them dynamically using the CLI
+                cur.execute("""
+                    SELECT id, template_id, stack_size 
+                    FROM dune.bot_pending_deliveries 
+                    WHERE account_id = %s AND is_applied = FALSE;
+                """, (account_id,))
+                pending_deliveries = cur.fetchall()
+
+                for delivery in pending_deliveries:
+                    del_id = delivery['id']
+                    tmpl_id = delivery['template_id']
+                    qty = delivery['stack_size']
+                    
+                    print(f"[Airdrop Daemon] Dynamic RabbitMQ delivery: Granting {qty}x {tmpl_id} to {name} ({char_id})")
+                    
+                    # Run the docker host's command line to publish the live RabbitMQ AddItemToInventory message
+                    import subprocess
+                    try:
+                        cmd = ["/opt/dune-local/runtime/scripts/dune", "admin", "grant-item-id", char_id, tmpl_id, str(qty)]
+                        res = subprocess.run(cmd, capture_output=True, text=True)
+                        if res.returncode == 0:
+                            cur.execute("UPDATE dune.bot_pending_deliveries SET is_applied = TRUE WHERE id = %s;", (del_id,))
+                            print(f"[Airdrop Daemon] Successfully granted and synchronized {tmpl_id}")
+                        else:
+                            print(f"[Airdrop Daemon] CLI Grant returned code {res.returncode}: {res.stderr}")
+                    except Exception as sub_err:
+                        print(f"[Airdrop Daemon] Failed executing system grant command: {sub_err}")
 
             conn.commit()
     except Exception as e:
