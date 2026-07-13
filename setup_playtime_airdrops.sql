@@ -245,14 +245,15 @@ BEGIN
       FROM dune.bot_pending_deliveries 
       WHERE account_id = p_account_id AND is_applied = FALSE
     LOOP
-      INSERT INTO dune.items (inventory_id, template_id, stack_size, position_index, stats, quality_level)
+      INSERT INTO dune.items (inventory_id, template_id, stack_size, position_index, stats, quality_level, is_new)
       VALUES (
         v_inv_id, 
         v_item.template_id, 
         v_item.stack_size, 
         (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = v_inv_id), 
         '{"FItemStackAndDurabilityStats": [[], {"DecayedMaxDurability": 0.0}]}'::jsonb, 
-        v_item.quality_level
+        v_item.quality_level,
+        TRUE
       );
 
       UPDATE dune.bot_pending_deliveries 
