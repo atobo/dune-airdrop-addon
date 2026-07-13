@@ -447,8 +447,9 @@ BEGIN
       -- Calculate seconds passed since last save/update
       v_delta_seconds := EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_track.last_active_at))::INT;
       
-      -- Limit delta to 120 seconds per save to avoid offline time-jumps
-      IF v_delta_seconds > 0 AND v_delta_seconds < 120 THEN
+      -- Limit delta to 600 seconds (10 minutes) per save to accommodate the engine's 5-minute auto-save
+      -- and to avoid offline time-jumps when a player logs back in after days
+      IF v_delta_seconds > 0 AND v_delta_seconds < 600 THEN
         -- AFK check logic
         v_dist := SQRT(POWER(v_x - v_track.last_x, 2) + POWER(v_y - v_track.last_y, 2) + POWER(v_z - v_track.last_z, 2));
         v_xp_diff := v_curr_xp - v_track.last_xp;
