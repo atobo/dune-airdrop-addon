@@ -157,20 +157,22 @@ def run_playtime_tick():
                     tmpl_id = delivery['template_id']
                     qty = delivery['stack_size']
                     
-                    print(f"[Airdrop Daemon] Dynamic RabbitMQ delivery: Granting {qty}x {tmpl_id} to {name} ({char_id})")
+                    print(f"[Airdrop Daemon] Dynamic delivery queued: Granting {qty}x {tmpl_id} to {name} ({char_id})")
                     
-                    # Run the docker host's command line to publish the live RabbitMQ AddItemToInventory message
-                    import subprocess
+                    # Instead of executing docker command inside postgres container (which has no docker),
+                    # we insert it into a bridge queue table. The web console page (running on the host with full API access)
+                    # will poll this table every 5s and trigger window.DuneAddon.request("adminGiveItemId") to grant it instantly!
                     try:
-                        cmd = ["/opt/dune-local/runtime/scripts/dune", "admin", "grant-item-id", char_id, tmpl_id, str(qty)]
-                        res = subprocess.run(cmd, capture_output=True, text=True)
-                        if res.returncode == 0:
-                            cur.execute("UPDATE dune.bot_pending_deliveries SET is_applied = TRUE WHERE id = %s;", (del_id,))
-                            print(f"[Airdrop Daemon] Successfully granted and synchronized {tmpl_id}")
-                        else:
-                            print(f"[Airdrop Daemon] CLI Grant returned code {res.returncode}: {res.stderr}")
+                        cur.execute("""
+                            INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied)
+                            VALUES (%s, %s, %s, FALSE)
+                            ON CONFLICT DO NOTHING;
+                        """, (account_id, tmpl_id, qty))
+                        # We mark it as queued, and the SQL function fn_deliver_playtime_airdrops can be called in the fallback.
+                        # The web addon JS will grab these pending deliveries and execute them live!
+                        # We can flag it for web delivery in a special queue, or just let the JS fetch unapplied rows.
                     except Exception as sub_err:
-                        print(f"[Airdrop Daemon] Failed executing system grant command: {sub_err}")
+                        print(f"[Airdrop Daemon] Failed queuing delivery: {sub_err}")
 
             conn.commit()
     except Exception as e:

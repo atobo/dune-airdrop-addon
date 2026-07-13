@@ -332,7 +332,7 @@ async function fetchPendingAirdrops() {
 
   try {
     const list = await window.DuneAddon.request("database.query", {
-      query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size
+      query: `SELECT bpd.id, bpd.account_id, COALESCE(ps.character_name, 'Unknown') as character_name, ps.player_pawn_id, bpd.template_id, bpd.stack_size
               FROM dune.bot_pending_deliveries bpd
               LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
               WHERE bpd.is_applied = false
@@ -350,6 +350,37 @@ async function fetchPendingAirdrops() {
 
     pendingAirdropsData = pendingRows;
     renderPendingAirdrops();
+
+    // Dynamically trigger live RabbitMQ deliveries for any pending items if player is currently online
+    if (pendingRows.length > 0) {
+      for (const item of pendingRows) {
+        if (item.player_pawn_id) {
+          try {
+            console.log(`[Airdrop Addon] Live Dispatching: ${item.stack_size}x ${item.template_id} to player ID ${item.player_pawn_id}`);
+            
+            // Execute the live grant via the RedBlink Docker Console bridge!
+            const grantRes = await window.DuneAddon.request("adminGiveItemId", {
+              playerId: item.player_pawn_id.toString(),
+              itemId: item.template_id,
+              quantity: parseInt(item.stack_size) || 1,
+              quality: 0
+            });
+
+            if (grantRes && (grantRes.ok || !grantRes.error)) {
+              // Mark the delivery as applied in the database
+              await window.DuneAddon.request("database.query", {
+                query: `UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = ${item.id}`
+              });
+              console.log(`[Airdrop Addon] Successfully synchronized delivery ID ${item.id}`);
+            } else {
+              console.warn(`[Airdrop Addon] Dispatch returned error:`, grantRes);
+            }
+          } catch (dispatchErr) {
+            console.error(`[Airdrop Addon] Failed live dispatcher run:`, dispatchErr);
+          }
+        }
+      }
+    }
 
     // Populate filter dropdown
     const selected = airdropPlayerSelect.value;
