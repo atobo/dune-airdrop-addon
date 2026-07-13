@@ -33,51 +33,31 @@ async function runCommand(cmd) {
   }
 }
 
-async function processDeliveries() {
-  console.log("Attempting to connect to database at", DB_URL, "...");
-  let client;
-  try {
-    client = await pool.connect();
-    console.log("Connected to database successfully!");
-  } catch (err) {
-    console.error("CRITICAL: Failed to connect to database!", err.message);
-    return;
-  }
+async function processDelivery(row) {
+  console.log(`Processing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
   
+  const playerId = row.account_id;
+  const itemId = row.template_id;
+  const quantity = row.stack_size;
+  const quality = row.quality_level || 0;
+  
+  // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
+  const cmd = `~/dune-awakening-selfhost-docker/runtime/scripts/dune admin grant-item-id ${playerId} ${itemId} ${quantity} 1 ${quality}`;
+  console.log(`Executing: ${cmd}`);
+  
+  const result = await runCommand(cmd);
+  
+  const client = await pool.connect();
   try {
-    const res = await client.query(`
-      SELECT id, account_id, template_id, stack_size, quality_level
-      FROM dune.bot_pending_deliveries
-      WHERE is_applied = false
-      ORDER BY created_at ASC
-    `);
-
-    for (const row of res.rows) {
-      console.log(`Processing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
-      
-      const playerId = row.account_id;
-      const itemId = row.template_id;
-      const quantity = row.stack_size;
-      const quality = row.quality_level || 0;
-      
-      // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
-      // We use an absolute path to avoid symlink issues with relative paths
-      const cmd = `~/dune-awakening-selfhost-docker/runtime/scripts/dune admin grant-item-id ${playerId} ${itemId} ${quantity} 1 ${quality}`;
-      console.log(`Executing: ${cmd}`);
-      
-      const result = await runCommand(cmd);
-      
-      if (result.ok) {
-        console.log(`Successfully instantly dropped item! Marking as applied.`);
-        await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
-      } else {
-        console.error(`Failed to drop item for delivery ID ${row.id}:`, result.error || result.stderr || result.stdout);
-        // We still mark it as applied so it doesn't infinite loop and block the queue
-        await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
-      }
+    if (result.ok) {
+      console.log(`Successfully instantly dropped item! Marking as applied.`);
+      await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+    } else {
+      console.error(`Failed to drop item for delivery ID ${row.id}:`, result.error || result.stderr || result.stdout);
+      await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     }
   } catch (err) {
-    console.error("Error processing deliveries:", err);
+    console.error("Error updating delivery status:", err);
   } finally {
     client.release();
   }
@@ -85,9 +65,37 @@ async function processDeliveries() {
 
 async function start() {
   console.log("Starting Dune Airdrop Node.js Delivery Daemon...");
-  console.log("Monitoring the database for pending instant drops...");
-  setInterval(processDeliveries, 10000); // Check every 10 seconds
-  processDeliveries();
+  console.log("Attempting to connect to database at", DB_URL, "...");
+  
+  let client;
+  try {
+    client = await pool.connect();
+    console.log("Connected to database successfully!");
+  } catch (err) {
+    console.error("CRITICAL: Failed to connect to database!", err.message);
+    process.exit(1);
+  }
+
+  // Subscribe to the new_airdrop channel
+  await client.query('LISTEN new_airdrop');
+  console.log("Listening for real-time airdrop events via Postgres Pub/Sub...");
+
+  // Handle incoming notifications
+  client.on('notification', async (msg) => {
+    try {
+      const delivery = JSON.parse(msg.payload);
+      console.log("\n--- Real-Time Airdrop Event Received! ---");
+      await processDelivery(delivery);
+    } catch (err) {
+      console.error("Error parsing or processing notification:", err);
+    }
+  });
+
+  // Keep the connection alive and handle disconnects
+  client.on('error', (err) => {
+    console.error("Fatal database connection error:", err.message);
+    process.exit(1);
+  });
 }
 
 start();

@@ -20,13 +20,28 @@ ALTER TABLE IF EXISTS dune.bot_active_playtime ALTER COLUMN character_id TYPE BI
 -- 2. Create pending deliveries queue table
 CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
   id SERIAL PRIMARY KEY,
-  account_id BIGINT NOT NULL,
+  account_id INT NOT NULL,
   template_id TEXT NOT NULL,
   stack_size INT NOT NULL,
-  is_applied BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  quality_level INT DEFAULT 0
+  quality_level INT DEFAULT 0,
+  is_applied BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Notification function for the Node daemon
+CREATE OR REPLACE FUNCTION dune.trg_notify_pending_delivery()
+RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify('new_airdrop', row_to_json(NEW)::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to notify daemon of new deliveries
+DROP TRIGGER IF EXISTS trg_notify_airdrop ON dune.bot_pending_deliveries;
+CREATE TRIGGER trg_notify_airdrop
+AFTER INSERT ON dune.bot_pending_deliveries
+FOR EACH ROW EXECUTE FUNCTION dune.trg_notify_pending_delivery();
 
 -- 3. Create the addon config table
 CREATE TABLE IF NOT EXISTS dune.discord_bot_config (
