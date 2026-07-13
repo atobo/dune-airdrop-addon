@@ -7,7 +7,7 @@
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -15,8 +15,8 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Outfit', 'sans-serif'],
-            mono: ['Orbitron', 'monospace'],
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
           },
           colors: {
             dune: {
@@ -342,35 +342,24 @@
       <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col mt-6">
         <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
           <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
-            <span class="mr-2">⚡</span> High-Accuracy Python Daemon
+            <span class="mr-2">⚡</span> Node.js Delivery Daemon
           </h2>
-          <label class="relative inline-flex items-center cursor-pointer" title="Enable or disable the daemon's activity">
-            <input type="checkbox" id="daemonEnabledToggle" checked class="sr-only peer" />
-            <div class="w-9 h-5 bg-slate-950 border border-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-slate-500 peer-checked:after:bg-amber-500 after:border-slate-800 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500/10 peer-checked:border-amber-500/40"></div>
-            <span class="ml-2 font-mono text-[10px] text-slate-400">ENABLED</span>
-          </label>
         </div>
         <div class="space-y-4 text-xs font-mono text-slate-300">
           <p class="text-slate-400">
-            The daemon is an <span class="text-amber-500 font-bold">OPTIONAL</span> background tracker. When installed, it polls the database every 15 seconds for extreme accuracy. If not installed, or if disabled, playtime falls back to your database triggers seamlessly.
+            The daemon is a <span class="text-amber-500 font-bold">REQUIRED</span> background service. It listens to the database and executes real-time RCON commands to drop items into player inventories, with a smart 60-second delay for loading screens and an offline retry loop.
           </p>
           <div class="bg-slate-950 p-3 rounded border border-slate-800 text-[11px] leading-relaxed select-all overflow-x-auto whitespace-pre font-mono"># 1. Pull the addon code on your server
 cd /home/YOUR_USER/dune-awakening-selfhost-docker/runtime/addons/installed/dune-airdrop-addon/
-sudo git pull origin main
+git pull origin main
 
-# 2. Find your postgres password and docker network
-sudo docker exec dune-postgres env | grep POSTGRES_PASSWORD
-sudo docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' dune-postgres
+# 2. Install dependencies
+cd daemon
+npm install
 
-# 3. Build and Run the daemon
-sudo docker build -t dune-airdrop-daemon ./daemon
-
-sudo docker run -d \
-  --name dune-airdrop-daemon \
-  --network YOUR_NETWORK_NAME \
-  -e PGPASSWORD="YOUR_POSTGRES_PASSWORD" \
-  --restart unless-stopped \
-  dune-airdrop-daemon</div>
+# 3. Start the daemon with PM2 (or node index.js)
+pm2 start index.js --name "airdrop-daemon"
+pm2 save</div>
         </div>
       </section>
     </div>
