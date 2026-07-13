@@ -112,24 +112,12 @@ DECLARE
   v_res_template_1 TEXT;
   v_res_template_2 TEXT;
   v_schem_template TEXT;
-  v_res_qty_1 INT;
-  v_res_qty_2 INT;
-  v_gear_quality INT := 0;
-BEGIN
   -- Roll Gear (40% chance)
   IF RANDOM() <= 0.40 THEN
-    SELECT id INTO v_gear_template FROM (
-      VALUES 
-        (0, 'MakeshiftClothing'), (0, 'ScrapMetalKnife'),
-        (1, 'ScavengerStillsuit'), (1, 'KirabHeavyArmor'),
-        (2, 'KirabStillsuit'), (2, 'StandardSword'),
-        (3, 'SlaverStillsuit'), (3, 'ArtisanSword'),
-        (4, 'NativeStillsuit'), (4, 'HouseSword'),
-        (5, 'MercenaryStillsuit'), (5, 'AdeptSword'),
-        (6, 'CHOAMStillsuit'), (6, 'RegisSword')
-    ) AS gear_pool(tier, id)
-    WHERE tier = p_tier
-    ORDER BY RANDOM()
+    SELECT template_id INTO v_gear_template 
+    FROM dune.airdrop_loot_tables 
+    WHERE tier = p_tier AND category = 'gear' 
+    ORDER BY RANDOM() * weight DESC 
     LIMIT 1;
 
     IF p_tier = 6 THEN
@@ -140,55 +128,32 @@ BEGIN
   END IF;
 
   -- Roll Resources
-  SELECT id INTO v_res_template_1 FROM (
-    VALUES
-      (0, 'ScrapMetal'), (0, 'PlantFiber'), (0, 'Stone'),
-      (1, 'CopperOre'), (1, 'AzuriteOre'), (1, 'FlourSand'), (1, 'Silicone'),
-      (2, 'IronOre'), (2, 'MagnetiteOre'), (2, 'DolomiteRock'), (2, 'SaguaroResourceRaw'),
-      (3, 'SteelBar'), (3, 'JasmiumCrystal'), (3, 'T3MarksmanComponent'),
-      (4, 'AluminiumBar'), (4, 'BauxiteOre'), (4, 'Plastone'), (4, 'ErythriteCrystal'),
-      (5, 'DuraluminumRod'), (5, 'CobaltBar'), (5, 'EMFGenerator'),
-      (6, 'T6RefinedResourceA'), (6, 'T6RefinedResourceB'), (6, 'T6ResourceA'), (6, 'MelangeSpice')
-  ) AS res_pool(tier, id)
-  WHERE tier = p_tier
-  ORDER BY RANDOM()
+  SELECT template_id INTO v_res_template_1 
+  FROM dune.airdrop_loot_tables 
+  WHERE tier = p_tier AND category = 'resources' 
+  ORDER BY RANDOM() * weight DESC 
   LIMIT 1;
-
-  SELECT id INTO v_res_template_2 FROM (
-    VALUES
-      (0, 'ScrapMetal'), (0, 'PlantFiber'), (0, 'Stone'),
-      (1, 'CopperOre'), (1, 'AzuriteOre'), (1, 'FlourSand'), (1, 'Silicone'),
-      (2, 'IronOre'), (2, 'MagnetiteOre'), (2, 'DolomiteRock'), (2, 'SaguaroResourceRaw'),
-      (3, 'SteelBar'), (3, 'JasmiumCrystal'), (3, 'T3MarksmanComponent'),
-      (4, 'AluminiumBar'), (4, 'BauxiteOre'), (4, 'Plastone'), (4, 'ErythriteCrystal'),
-      (5, 'DuraluminumRod'), (5, 'CobaltBar'), (5, 'EMFGenerator'),
-      (6, 'T6RefinedResourceA'), (6, 'T6RefinedResourceB'), (6, 'T6ResourceA'), (6, 'MelangeSpice')
-  ) AS res_pool(tier, id)
-  WHERE tier = p_tier AND id <> COALESCE(v_res_template_1, '')
-  ORDER BY RANDOM()
-  LIMIT 1;
-
-  IF v_res_template_2 IS NULL THEN
-    v_res_template_2 := v_res_template_1;
-  END IF;
+  
+  -- Attempt to get a unique second resource, fall back if loops fail
+  FOR i IN 1..10 LOOP
+    SELECT template_id INTO v_res_template_2 
+    FROM dune.airdrop_loot_tables 
+    WHERE tier = p_tier AND category = 'resources' 
+    ORDER BY RANDOM() * weight DESC 
+    LIMIT 1;
+    
+    EXIT WHEN v_res_template_2 <> v_res_template_1;
+  END LOOP;
 
   v_res_qty_1 := GREATEST(1, ROUND((FLOOR(RANDOM() * 6) + 5) * p_multiplier));
   v_res_qty_2 := GREATEST(1, ROUND((FLOOR(RANDOM() * 6) + 5) * p_multiplier));
 
   -- Roll Schematic (80% chance)
   IF RANDOM() <= 0.80 THEN
-    SELECT id INTO v_schem_template FROM (
-      VALUES
-        (0, 'Schematic_MakeshiftLocker'), (0, 'Schematic_MakeshiftBed'),
-        (1, 'Schematic_KirabArmor'), (1, 'Schematic_SimpleStool'),
-        (2, 'Schematic_StandardSword'), (2, 'Schematic_StorageChest'),
-        (3, 'Schematic_ArtisanSword'), (3, 'Schematic_IronLocker'),
-        (4, 'Schematic_HouseSword'), (4, 'Schematic_HeavyLocker'),
-        (5, 'Schematic_AdeptSword'), (5, 'Schematic_WeaponRack'),
-        (6, 'Schematic_RegisSword'), (6, 'Schematic_AdvancedVault')
-    ) AS schem_pool(tier, id)
-    WHERE tier = p_tier
-    ORDER BY RANDOM()
+    SELECT template_id INTO v_schem_template 
+    FROM dune.airdrop_loot_tables 
+    WHERE tier = p_tier AND category = 'schematics' 
+    ORDER BY RANDOM() * weight DESC 
     LIMIT 1;
   END IF;
 
@@ -527,3 +492,12 @@ EXECUTE FUNCTION dune.trg_track_playtime();
 
 -- Initial diagnostics print
 SELECT 'Arrakis Playtime Airdrop database trigger configured successfully!' AS status;
+[ B E G I N  
+ A U T O - G E N E R A T E D  
+ L O O T  
+ P O O L S ]  
+ [ E N D  
+ A U T O - G E N E R A T E D  
+ L O O T  
+ P O O L S ]  
+ 
