@@ -240,8 +240,7 @@ async function fetchDiagnostics() {
       query: `SELECT 
                 ps.character_name AS name,
                 COALESCE(act.map, 'Unknown') AS map,
-                COALESCE(bp.active_seconds, 0) AS active_seconds,
-                (SELECT COALESCE(JSON_AGG(tag), '[]'::json) FROM dune.player_tags WHERE character_id = ps.id) AS tags
+                COALESCE(bp.active_seconds, 0) AS active_seconds
               FROM dune.player_state ps
               LEFT JOIN dune.actors act ON ps.player_pawn_id = act.id
               LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id
@@ -258,10 +257,6 @@ async function fetchDiagnostics() {
     }
 
     diagnosticsTableBody.innerHTML = players.map(p => {
-      const ecolab = (p.tags || []).includes('Contract.Tracking.Journey.EcolabCompleted')
-        ? '<span class="text-green-500 font-bold">COMPLETED</span>'
-        : '<span class="text-slate-600">PENDING</span>';
-      
       const activeMin = Math.floor(p.active_seconds / 60);
       const limitMin = parseInt(playtimeIntervalInput.value) || 60;
       const nextMin = Math.max(0, limitMin - activeMin);
@@ -271,7 +266,7 @@ async function fetchDiagnostics() {
           <td class="py-2 text-slate-300">${p.name}</td>
           <td class="py-2 text-slate-400">${activeMin}m / ${limitMin}m</td>
           <td class="py-2 text-slate-400">${nextMin}m left</td>
-          <td class="py-2 text-right">${ecolab}</td>
+          <td class="py-2 text-right text-slate-500">${p.map}</td>
         </tr>
       `;
     }).join('');
