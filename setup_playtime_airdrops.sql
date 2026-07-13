@@ -499,10 +499,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 10. Install the trigger on the player_state table updates
+-- 10. Install the trigger on the underlying encrypted_player_state table updates (since player_state is a view)
 DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.player_state;
+DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.encrypted_player_state;
 CREATE TRIGGER trg_player_state_playtime
-AFTER UPDATE ON dune.player_state
+AFTER UPDATE OF online_status ON dune.encrypted_player_state
 FOR EACH ROW
 EXECUTE FUNCTION dune.trg_track_playtime();
 
