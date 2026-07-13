@@ -5,10 +5,11 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 // The connection to the local database container
-const DB_URL = process.env.DATABASE_URL || 'postgres://dune:dune@127.0.0.1:15432/dune';
+const DB_URL = process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/dune';
 
 const pool = new pg.Pool({
   connectionString: DB_URL,
+  connectionTimeoutMillis: 2000, // Fail fast if the DB is unreachable
 });
 
 async function runCommand(cmd) {
@@ -21,7 +22,16 @@ async function runCommand(cmd) {
 }
 
 async function processDeliveries() {
-  const client = await pool.connect();
+  console.log("Attempting to connect to database at", DB_URL, "...");
+  let client;
+  try {
+    client = await pool.connect();
+    console.log("Connected to database successfully!");
+  } catch (err) {
+    console.error("CRITICAL: Failed to connect to database!", err.message);
+    return;
+  }
+  
   try {
     const res = await client.query(`
       SELECT id, account_id, template_id, stack_size, quality_level
