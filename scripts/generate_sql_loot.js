@@ -156,7 +156,7 @@ items.forEach(item => {
     });
   } else if (cat === 'schematics') {
     const idLower = item.id.toLowerCase();
-    if (idLower.includes('dummy') || idLower.includes('placeholder') || idLower.includes('test') || idLower.includes('npe_')) {
+    if (idLower.includes('dummy') || idLower.includes('placeholder') || idLower.includes('test') || idLower.includes('npe_') || idLower.includes('fragment')) {
       return;
     }
     gameItems.tiers[tier].schematics.push(item);
