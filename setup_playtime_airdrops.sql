@@ -370,15 +370,17 @@ BEGIN
         END IF;
       END LOOP;
 
-      -- Check if target is met and we haven't already claimed weekly attendance in the past 6 days
-      IF v_weekly_days_count >= v_weekly_req AND 
-         (v_track.last_weekly_claimed_at IS NULL OR v_track.last_weekly_claimed_at < NOW() - INTERVAL '6 days') THEN
-        
-        PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_weekly_scale, 'weekly');
-        
-        UPDATE dune.bot_active_playtime 
-        SET last_weekly_claimed_at = NOW() 
-        WHERE character_id = p_pawn_id;
+      -- Check if target is met and we haven't already claimed weekly attendance this week
+      IF v_weekly_days_count >= v_weekly_req THEN
+        IF v_track.last_weekly_claimed_at IS NULL OR 
+           ((EXTRACT(YEAR FROM v_track.last_weekly_claimed_at - INTERVAL '1 day')::INT * 100) + EXTRACT(WEEK FROM v_track.last_weekly_claimed_at - INTERVAL '1 day')::INT) != v_current_week_id THEN
+          
+          PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_weekly_scale, 'weekly');
+          
+          UPDATE dune.bot_active_playtime 
+          SET last_weekly_claimed_at = NOW() 
+          WHERE character_id = p_pawn_id;
+        END IF;
       END IF;
     END IF;
 
