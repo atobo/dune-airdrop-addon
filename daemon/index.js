@@ -39,8 +39,8 @@ async function processDeliveries() {
       const quality = row.quality_level || 0;
       
       // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
-      // We assume the daemon runs inside the addon folder in the ubuntu environment.
-      const cmd = `../../../../../dune admin grant-item-id ${playerId} ${itemId} ${quantity} 1 ${quality}`;
+      // We use an absolute path to avoid symlink issues with relative paths
+      const cmd = `~/dune-awakening-selfhost-docker/dune admin grant-item-id ${playerId} ${itemId} ${quantity} 1 ${quality}`;
       console.log(`Executing: ${cmd}`);
       
       const result = await runCommand(cmd);
