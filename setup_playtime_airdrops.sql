@@ -115,68 +115,78 @@ DECLARE
   v_gear_quality INT;
   v_res_qty_1 INT;
   v_res_qty_2 INT;
+  v_num_rolls INT;
 BEGIN
-  -- Roll Gear (40% chance)
-  IF RANDOM() <= 0.40 THEN
-    SELECT template_id INTO v_gear_template 
-    FROM dune.airdrop_loot_tables 
-    WHERE tier = p_tier AND category = 'gear' 
-    ORDER BY RANDOM() * weight DESC 
-    LIMIT 1;
+  v_num_rolls := GREATEST(1, ROUND(p_multiplier));
 
-    v_gear_quality := 0;
-  END IF;
+  FOR j IN 1..v_num_rolls LOOP
+    v_gear_template := NULL;
+    v_schem_template := NULL;
+    v_res_template_1 := NULL;
+    v_res_template_2 := NULL;
 
-  -- Roll Resources
-  SELECT template_id INTO v_res_template_1 
-  FROM dune.airdrop_loot_tables 
-  WHERE tier = p_tier AND category = 'resources' 
-  ORDER BY RANDOM() * weight DESC 
-  LIMIT 1;
-  
-  -- Attempt to get a unique second resource, fall back if loops fail
-  FOR i IN 1..10 LOOP
-    SELECT template_id INTO v_res_template_2 
+    -- Roll Gear (40% chance)
+    IF RANDOM() <= 0.40 THEN
+      SELECT template_id INTO v_gear_template 
+      FROM dune.airdrop_loot_tables 
+      WHERE tier = p_tier AND category = 'gear' 
+      ORDER BY RANDOM() * weight DESC 
+      LIMIT 1;
+
+      v_gear_quality := 0;
+    END IF;
+
+    -- Roll Resources
+    SELECT template_id INTO v_res_template_1 
     FROM dune.airdrop_loot_tables 
     WHERE tier = p_tier AND category = 'resources' 
     ORDER BY RANDOM() * weight DESC 
     LIMIT 1;
     
-    EXIT WHEN v_res_template_2 <> v_res_template_1;
+    -- Attempt to get a unique second resource, fall back if loops fail
+    FOR i IN 1..10 LOOP
+      SELECT template_id INTO v_res_template_2 
+      FROM dune.airdrop_loot_tables 
+      WHERE tier = p_tier AND category = 'resources' 
+      ORDER BY RANDOM() * weight DESC 
+      LIMIT 1;
+      
+      EXIT WHEN v_res_template_2 <> v_res_template_1;
+    END LOOP;
+
+    v_res_qty_1 := GREATEST(1, (FLOOR(RANDOM() * 6) + 5)::INT);
+    v_res_qty_2 := GREATEST(1, (FLOOR(RANDOM() * 6) + 5)::INT);
+
+    -- Roll Schematic (80% chance)
+    IF RANDOM() <= 0.80 THEN
+      SELECT template_id INTO v_schem_template 
+      FROM dune.airdrop_loot_tables 
+      WHERE tier = p_tier AND category = 'schematics' 
+      ORDER BY RANDOM() * weight DESC 
+      LIMIT 1;
+    END IF;
+
+    -- Queue items
+    IF v_gear_template IS NOT NULL THEN
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
+      VALUES (p_account_id, v_gear_template, 1, FALSE, v_gear_quality);
+    END IF;
+
+    IF v_res_template_1 IS NOT NULL THEN
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
+      VALUES (p_account_id, v_res_template_1, v_res_qty_1, FALSE, 0);
+    END IF;
+
+    IF v_res_template_2 IS NOT NULL THEN
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
+      VALUES (p_account_id, v_res_template_2, v_res_qty_2, FALSE, 0);
+    END IF;
+
+    IF v_schem_template IS NOT NULL THEN
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
+      VALUES (p_account_id, v_schem_template, 1, FALSE, 0);
+    END IF;
   END LOOP;
-
-  v_res_qty_1 := GREATEST(1, ROUND((FLOOR(RANDOM() * 6) + 5) * p_multiplier));
-  v_res_qty_2 := GREATEST(1, ROUND((FLOOR(RANDOM() * 6) + 5) * p_multiplier));
-
-  -- Roll Schematic (80% chance)
-  IF RANDOM() <= 0.80 THEN
-    SELECT template_id INTO v_schem_template 
-    FROM dune.airdrop_loot_tables 
-    WHERE tier = p_tier AND category = 'schematics' 
-    ORDER BY RANDOM() * weight DESC 
-    LIMIT 1;
-  END IF;
-
-  -- Queue items
-  IF v_gear_template IS NOT NULL THEN
-    INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-    VALUES (p_account_id, v_gear_template, 1, FALSE, v_gear_quality);
-  END IF;
-
-  IF v_res_template_1 IS NOT NULL THEN
-    INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-    VALUES (p_account_id, v_res_template_1, v_res_qty_1, FALSE, 0);
-  END IF;
-
-  IF v_res_template_2 IS NOT NULL THEN
-    INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-    VALUES (p_account_id, v_res_template_2, v_res_qty_2, FALSE, 0);
-  END IF;
-
-  IF v_schem_template IS NOT NULL THEN
-    INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-    VALUES (p_account_id, v_schem_template, 1, FALSE, 0);
-  END IF;
 END;
 $$ LANGUAGE plpgsql;
 
