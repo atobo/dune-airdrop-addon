@@ -496,56 +496,6 @@ DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.player_state;
 DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.encrypted_player_state;
 CREATE TRIGGER trg_player_state_playtime
 AFTER UPDATE OF online_status ON dune.encrypted_player_state
-    -- Update weekly mask. We represent weekly logins using a 7-bit mask.
-    -- Shift previous bits left by 1 and set the LSB to 1 for today.
-    v_mask := ((v_track.weekly_login_mask << 1) | 1) & 127;
-
-    -- Update tracking stats
-    UPDATE dune.bot_active_playtime 
-    SET 
-      last_login_date = v_today, 
-      consecutive_days = v_streak,
-      weekly_login_mask = v_mask
-    WHERE character_id = p_pawn_id;
-
-    -- Roll and Deliver Daily Reward if enabled
-    IF v_daily_enabled THEN
-      v_multiplier := 1.0 + ((v_streak - 1) * v_daily_step);
-      PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_multiplier, 'daily');
-    END IF;
-
-    -- Process Weekly Attendance Reward (If enabled and threshold met)
-    IF v_weekly_enabled THEN
-      -- Count set bits in 7-day mask
-      v_weekly_days_count := 0;
-      FOR v_i IN 0..6 LOOP
-        IF ((v_mask >> v_i) & 1) = 1 THEN
-          v_weekly_days_count := v_weekly_days_count + 1;
-        END IF;
-      END LOOP;
-
-      -- Check if target is met and we haven't already claimed weekly attendance in the past 6 days
-      IF v_weekly_days_count >= v_weekly_req AND 
-         (v_track.last_weekly_claimed_at IS NULL OR v_track.last_weekly_claimed_at < NOW() - INTERVAL '6 days') THEN
-        
-        PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_weekly_scale, 'weekly');
-        
-        UPDATE dune.bot_active_playtime 
-        SET last_weekly_claimed_at = NOW() 
-        WHERE character_id = p_pawn_id;
-      END IF;
-    END IF;
-
-  END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-
--- 10. Install the trigger on the underlying encrypted_player_state table updates (since player_state is a view)
-DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.player_state;
-DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.encrypted_player_state;
-CREATE TRIGGER trg_player_state_playtime
-AFTER UPDATE OF online_status ON dune.encrypted_player_state
 FOR EACH ROW
 EXECUTE FUNCTION dune.trg_track_playtime();
 
