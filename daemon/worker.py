@@ -101,7 +101,10 @@ def track_playtime(conn):
                 curr_xp = xp_row["xp"] if xp_row else 0
 
                 cur.execute("""
-                    SELECT (transform[1])::float AS x, (transform[2])::float AS y, (transform[3])::float AS z
+                    SELECT 
+                      ((transform).location).x::float AS x, 
+                      ((transform).location).y::float AS y, 
+                      ((transform).location).z::float AS z
                     FROM dune.actors WHERE id = %s LIMIT 1;
                 """, (char_id,))
                 coord_row = cur.fetchone()

@@ -435,9 +435,9 @@ BEGIN
     -- Extract translation coordinates safely
     IF NEW.player_pawn_id IS NOT NULL THEN
       SELECT 
-        (transform[1])::double precision, 
-        (transform[2])::double precision, 
-        (transform[3])::double precision
+        ((transform).location).x::double precision, 
+        ((transform).location).y::double precision, 
+        ((transform).location).z::double precision
       INTO v_x, v_y, v_z
       FROM dune.actors 
       WHERE id = NEW.player_pawn_id;
