@@ -490,7 +490,8 @@ BEGIN
   
   -- Force direct delivery run on save to catch any lingering drops
   IF NEW.online_status::text = 'Online' THEN
-    PERFORM dune.fn_deliver_playtime_airdrops(NEW.account_id, NEW.player_pawn_id);
+    -- Native delivery disabled so Node daemon can handle instant delivery via RCON
+    -- PERFORM dune.fn_deliver_playtime_airdrops(NEW.account_id, NEW.player_pawn_id);
   END IF;
 
   RETURN NEW;
