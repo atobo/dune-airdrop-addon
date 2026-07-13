@@ -202,23 +202,26 @@ async function handleSaveAllSettings() {
   }
 
   try {
+    const getFloat = (val, def) => { const n = parseFloat(val); return isNaN(n) ? def : n; };
+    const getInt = (val, def) => { const n = parseInt(val); return isNaN(n) ? def : n; };
+
     const payload = {
       playtime_enabled: document.getElementById('playtimeEnabledToggle').checked,
-      playtime_interval: parseInt(playtimeIntervalInput.value) || 60,
-      playtime_distance: parseFloat(playtimeDistanceInput.value) || 10.0,
-      playtime_xp: parseInt(playtimeXpInput.value) || 1,
+      playtime_interval: getInt(playtimeIntervalInput.value, 60),
+      playtime_distance: getFloat(playtimeDistanceInput.value, 10.0),
+      playtime_xp: getInt(playtimeXpInput.value, 1),
       daily_enabled: document.getElementById('dailyEnabledToggle').checked,
-      daily_multiplier_step: parseFloat(document.getElementById('dailyStepInput').value) || 0.5,
-      daily_max_streak: parseInt(document.getElementById('dailyMaxStreakInput').value) || 7,
+      daily_multiplier_step: getFloat(document.getElementById('dailyStepInput').value, 0.5),
+      daily_max_streak: getInt(document.getElementById('dailyMaxStreakInput').value, 7),
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
-      weekly_days_required: parseInt(document.getElementById('weeklyDaysRequiredInput').value) || 5,
-      weekly_multiplier: parseFloat(document.getElementById('weeklyMultiplierInput').value) || 5.0,
+      weekly_days_required: getInt(document.getElementById('weeklyDaysRequiredInput').value, 5),
+      weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0),
       daemon_enabled: document.getElementById('daemonEnabledToggle').checked
     };
 
     for (let t = 0; t <= 6; t++) {
       const input = document.getElementById(`playtimeMultiplierT${t}Input`);
-      payload[`playtime_multiplier_t${t}`] = input ? parseInt(input.value) || 1 : 1;
+      payload[`playtime_multiplier_t${t}`] = input ? getInt(input.value, 1) : 1;
     }
     payload.playtime_multiplier = payload.playtime_multiplier_t6;
 
