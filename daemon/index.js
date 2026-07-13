@@ -1,15 +1,21 @@
 import pg from 'pg';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// Resolve the root of the Dune Docker Console by going up from this installed addon's directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const duneDockerRoot = path.resolve(__dirname, '../../../../..');
 
 // Automatically find the password from the server's .env file!
 let dbPassword = "dune";
 try {
-  const envPath = path.resolve(process.env.HOME, 'dune-awakening-selfhost-docker/.env');
+  const envPath = path.resolve(duneDockerRoot, '.env');
   const envFile = fs.readFileSync(envPath, 'utf8');
   const match = envFile.match(/^DUNE_DB_PASSWORD=(.*)$/m);
   if (match) dbPassword = match[1].trim();
@@ -24,9 +30,9 @@ const pool = new pg.Pool({
   connectionTimeoutMillis: 2000, // Fail fast if the DB is unreachable
 });
 
-async function runCommand(cmd) {
+async function runCommand(executable, args) {
   try {
-    const { stdout, stderr } = await execAsync(cmd);
+    const { stdout, stderr } = await execFileAsync(executable, args);
     return { ok: true, stdout, stderr };
   } catch (err) {
     return { ok: false, error: err.message, stdout: err.stdout, stderr: err.stderr };
@@ -42,10 +48,12 @@ async function executeDelivery(row) {
   const quality = row.quality_level || 0;
   
   // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
-  const cmd = `~/dune-awakening-selfhost-docker/runtime/scripts/dune admin grant-item-id ${playerId} ${itemId} ${quantity} 1 ${quality}`;
-  console.log(`Executing RCON: ${cmd}`);
+  const executable = path.resolve(duneDockerRoot, 'runtime/scripts/dune');
+  const args = ['admin', 'grant-item-id', String(playerId), String(itemId), String(quantity), '1', String(quality)];
   
-  const result = await runCommand(cmd);
+  console.log(`Executing RCON: ${executable} ${args.join(' ')}`);
+  
+  const result = await runCommand(executable, args);
   
   const client = await pool.connect();
   try {
