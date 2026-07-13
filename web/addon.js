@@ -247,6 +247,7 @@ async function fetchDiagnostics() {
     const rawPlayers = await window.DuneAddon.request("database.query", {
       query: `SELECT 
                 ps.character_name AS name,
+                ps.player_pawn_id AS character_id,
                 COALESCE(act.map, 'Unknown') AS map,
                 COALESCE(bp.active_seconds, 0) AS active_seconds,
                 COALESCE(bp.consecutive_days, 0) AS consecutive_days,
@@ -261,7 +262,7 @@ async function fetchDiagnostics() {
     if (!players || players.length === 0) {
       diagnosticsTableBody.innerHTML = `
         <tr>
-          <td colspan="6" class="py-4 text-center italic text-slate-500">No online players detected.</td>
+          <td colspan="7" class="py-4 text-center italic text-slate-500">No online players detected.</td>
         </tr>
       `;
       return;
@@ -283,6 +284,10 @@ async function fetchDiagnostics() {
           <td class="py-2 text-slate-400">${p.consecutive_days || 0} Days</td>
           <td class="py-2 text-slate-400">${weeklyLogins} / ${weeklyReq}</td>
           <td class="py-2 text-right text-slate-500">${p.map}</td>
+          <td class="py-2 text-right">
+            <button onclick="testResetDaily(${p.character_id})" class="text-[10px] bg-red-900/40 hover:bg-red-800 text-red-200 px-2 py-1 rounded">Reset Daily</button>
+            <button onclick="testSetWeekly(${p.character_id})" class="text-[10px] bg-blue-900/40 hover:bg-blue-800 text-blue-200 px-2 py-1 rounded ml-1">Set 5/5</button>
+          </td>
         </tr>
       `;
     }).join('');
