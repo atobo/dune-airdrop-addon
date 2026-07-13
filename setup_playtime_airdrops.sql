@@ -3,7 +3,7 @@
 
 -- 1. Create playtime tracking table (supports coordinates, XP, anti-AFK validation, daily and weekly streaks)
 CREATE TABLE IF NOT EXISTS dune.bot_active_playtime (
-  character_id TEXT PRIMARY KEY,
+  character_id BIGINT PRIMARY KEY,
   active_seconds INT DEFAULT 0,
   last_xp BIGINT DEFAULT 0,
   last_x DOUBLE PRECISION DEFAULT 0.0,
@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS dune.bot_active_playtime (
   weekly_login_mask INT DEFAULT 0,
   last_weekly_claimed_at TIMESTAMP WITH TIME ZONE
 );
+ALTER TABLE IF EXISTS dune.bot_active_playtime ALTER COLUMN character_id TYPE BIGINT USING character_id::bigint;
 
 -- 2. Create pending deliveries queue table
 CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
@@ -60,7 +61,7 @@ VALUES (
 ON CONFLICT (config_key) DO NOTHING;
 
 -- 4. Dynamic level and tier resolver
-CREATE OR REPLACE FUNCTION dune.fn_get_pawn_tier(p_pawn_id TEXT)
+CREATE OR REPLACE FUNCTION dune.fn_get_pawn_tier(p_pawn_id BIGINT)
 RETURNS INT AS $$
 DECLARE
   v_xp BIGINT := 0;
@@ -210,7 +211,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 6. Playtime Reward Rolling logic wrapper
-CREATE OR REPLACE FUNCTION dune.fn_roll_playtime_reward(p_account_id BIGINT, p_pawn_id TEXT)
+CREATE OR REPLACE FUNCTION dune.fn_roll_playtime_reward(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_tier INT;
@@ -230,7 +231,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 7. Deliver pending rewards instantly without relogs
-CREATE OR REPLACE FUNCTION dune.fn_deliver_playtime_airdrops(p_account_id BIGINT, p_pawn_id TEXT)
+CREATE OR REPLACE FUNCTION dune.fn_deliver_playtime_airdrops(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_inv_id INT;
@@ -266,7 +267,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 8. Daily and Weekly rewards check function executed on login/save
-CREATE OR REPLACE FUNCTION dune.fn_check_daily_weekly_rewards(p_account_id BIGINT, p_pawn_id TEXT)
+CREATE OR REPLACE FUNCTION dune.fn_check_daily_weekly_rewards(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_config JSONB;

@@ -243,7 +243,7 @@ async function fetchDiagnostics() {
                 COALESCE(bp.active_seconds, 0) AS active_seconds
               FROM dune.player_state ps
               LEFT JOIN dune.actors act ON ps.player_pawn_id = act.id
-              LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id
+              LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id::bigint
               WHERE ps.player_pawn_id IS NOT NULL AND LOWER(ps.online_status::text) = 'online'`
     });
 
