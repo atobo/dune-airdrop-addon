@@ -411,3 +411,32 @@ function loadMockData() {
 // Globals exports
 window.handleSaveAllSettings = handleSaveAllSettings;
 window.showToast = showToast;
+
+window.testResetDaily = async function(characterId) {
+  try {
+    await window.DuneAddon.request("database.execute", {
+      query: `UPDATE dune.bot_active_playtime 
+              SET last_login_date = NULL, consecutive_days = 0 
+              WHERE character_id = ${characterId}`
+    });
+    showToast('Daily streak reset for player!', 'success');
+    fetchDiagnostics();
+  } catch (err) {
+    showToast(`Failed to reset daily: ${err.message}`, 'error');
+  }
+};
+
+window.testSetWeekly = async function(characterId) {
+  try {
+    // 31 in binary is 11111 (5 days)
+    await window.DuneAddon.request("database.execute", {
+      query: `UPDATE dune.bot_active_playtime 
+              SET weekly_login_mask = 31, last_weekly_claimed_at = NULL 
+              WHERE character_id = ${characterId}`
+    });
+    showToast('Weekly mask set to 5 days!', 'success');
+    fetchDiagnostics();
+  } catch (err) {
+    showToast(`Failed to set weekly: ${err.message}`, 'error');
+  }
+};

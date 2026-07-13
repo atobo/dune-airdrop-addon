@@ -64,9 +64,9 @@ async function executeDelivery(row) {
 }
 
 async function processDelivery(row) {
-  // Wait 30 seconds from the time the delivery was created so players can load in
+  // Wait 60 seconds from the time the delivery was created so players can load in
   const ageMs = Date.now() - new Date(row.created_at).getTime();
-  const delayMs = Math.max(0, 30000 - ageMs);
+  const delayMs = Math.max(0, 60000 - ageMs);
 
   if (delayMs > 0) {
     console.log(`Delaying delivery ID ${row.id} by ${Math.round(delayMs / 1000)} seconds to accommodate loading screens...`);
