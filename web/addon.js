@@ -248,7 +248,9 @@ async function fetchDiagnostics() {
       query: `SELECT 
                 ps.character_name AS name,
                 COALESCE(act.map, 'Unknown') AS map,
-                COALESCE(bp.active_seconds, 0) AS active_seconds
+                COALESCE(bp.active_seconds, 0) AS active_seconds,
+                COALESCE(bp.consecutive_days, 0) AS consecutive_days,
+                COALESCE(bp.weekly_login_mask, 0) AS weekly_login_mask
               FROM dune.player_state ps
               LEFT JOIN dune.actors act ON ps.player_pawn_id = act.id
               LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id::bigint
@@ -259,7 +261,7 @@ async function fetchDiagnostics() {
     if (!players || players.length === 0) {
       diagnosticsTableBody.innerHTML = `
         <tr>
-          <td colspan="4" class="py-4 text-center italic text-slate-500">No online players detected.</td>
+          <td colspan="6" class="py-4 text-center italic text-slate-500">No online players detected.</td>
         </tr>
       `;
       return;
@@ -269,12 +271,17 @@ async function fetchDiagnostics() {
       const activeMin = Math.floor(p.active_seconds / 60);
       const limitMin = parseInt(playtimeIntervalInput.value) || 60;
       const nextMin = Math.max(0, limitMin - activeMin);
+      
+      const weeklyLogins = (p.weekly_login_mask || 0).toString(2).split('1').length - 1;
+      const weeklyReq = parseInt(document.getElementById('weeklyDaysRequiredInput').value) || 5;
 
       return `
         <tr class="border-b border-slate-900/40 hover:bg-slate-900/20 font-mono">
           <td class="py-2 text-slate-300">${p.name}</td>
           <td class="py-2 text-slate-400">${activeMin}m / ${limitMin}m</td>
           <td class="py-2 text-slate-400">${nextMin}m left</td>
+          <td class="py-2 text-slate-400">${p.consecutive_days || 0} Days</td>
+          <td class="py-2 text-slate-400">${weeklyLogins} / ${weeklyReq}</td>
           <td class="py-2 text-right text-slate-500">${p.map}</td>
         </tr>
       `;

@@ -324,8 +324,8 @@ BEGIN
     END IF;
 
     -- Update weekly mask. We represent weekly logins using a 7-bit mask.
-    -- Shift previous bits left by 1 and set the LSB to 1 for today.
-    v_mask := ((v_track.weekly_login_mask << 1) | 1) & 127;
+    -- Shift previous bits left by the number of days passed to correctly 0-out missed days.
+    v_mask := ((v_track.weekly_login_mask << (v_today - COALESCE(v_track.last_login_date, v_today - 1))) | 1) & 127;
 
     -- Update tracking stats
     UPDATE dune.bot_active_playtime 
