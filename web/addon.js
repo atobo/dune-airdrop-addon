@@ -104,10 +104,11 @@ function setupSpawnModal() {
 
     try {
       // Find inventory ID for the active container
-      const invRes = await window.DuneAddon.request("database.query", {
+      const rawInvRes = await window.DuneAddon.request("database.query", {
         query: "SELECT id FROM dune.inventories WHERE actor_id = $1 LIMIT 1",
         params: [activeContainerId]
       });
+      const invRes = rawInvRes.rows || rawInvRes || [];
 
       if (invRes && invRes.length > 0) {
         const invId = invRes[0].id;
@@ -133,9 +134,10 @@ function setupSpawnModal() {
 // --- Database Operations ---
 async function loadSettings() {
   try {
-    const res = await window.DuneAddon.request("database.query", {
+    const rawRes = await window.DuneAddon.request("database.query", {
       query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
     });
+    const res = rawRes.rows || rawRes || [];
     
     let mults = { 
       playtime_enabled: true, 
@@ -236,7 +238,7 @@ async function fetchDiagnostics() {
   if (isSandboxMode) return;
 
   try {
-    const players = await window.DuneAddon.request("database.query", {
+    const rawPlayers = await window.DuneAddon.request("database.query", {
       query: `SELECT 
                 ps.character_name AS name,
                 COALESCE(act.map, 'Unknown') AS map,
@@ -246,6 +248,7 @@ async function fetchDiagnostics() {
               LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id::bigint
               WHERE ps.player_pawn_id IS NOT NULL AND LOWER(ps.online_status::text) = 'online'`
     });
+    const players = rawPlayers.rows || rawPlayers || [];
 
     if (!players || players.length === 0) {
       diagnosticsTableBody.innerHTML = `
@@ -279,13 +282,14 @@ async function fetchPendingAirdrops() {
   if (isSandboxMode) return;
 
   try {
-    const list = await window.DuneAddon.request("database.query", {
+    const rawList = await window.DuneAddon.request("database.query", {
       query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size
               FROM dune.bot_pending_deliveries bpd
               LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
               WHERE bpd.is_applied = false
               ORDER BY bpd.created_at DESC`
     });
+    const list = rawList.rows || rawList || [];
 
     pendingAirdropsData = list || [];
     renderPendingAirdrops();
