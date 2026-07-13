@@ -1,11 +1,23 @@
 import pg from 'pg';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
 
 const execAsync = promisify(exec);
 
-// The connection to the local database container
-const DB_URL = process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/dune';
+// Automatically find the password from the server's .env file!
+let dbPassword = "dune";
+try {
+  const envPath = path.resolve(process.env.HOME, 'dune-awakening-selfhost-docker/.env');
+  const envFile = fs.readFileSync(envPath, 'utf8');
+  const match = envFile.match(/^DUNE_DB_PASSWORD=(.*)$/m);
+  if (match) dbPassword = match[1].trim();
+} catch (e) {
+  console.error("Could not read .env file, using default password.");
+}
+
+const DB_URL = process.env.DATABASE_URL || `postgres://dune:${dbPassword}@127.0.0.1:15432/dune`;
 
 const pool = new pg.Pool({
   connectionString: DB_URL,
