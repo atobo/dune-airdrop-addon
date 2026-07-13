@@ -502,7 +502,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.player_state;
 DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.encrypted_player_state;
 CREATE TRIGGER trg_player_state_playtime
-AFTER UPDATE OF online_status ON dune.encrypted_player_state
+AFTER UPDATE ON dune.encrypted_player_state
 FOR EACH ROW
 EXECUTE FUNCTION dune.trg_track_playtime();
 
