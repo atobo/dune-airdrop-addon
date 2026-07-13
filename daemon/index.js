@@ -33,8 +33,8 @@ async function runCommand(cmd) {
   }
 }
 
-async function processDelivery(row) {
-  console.log(`Processing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
+async function executeDelivery(row) {
+  console.log(`Executing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
   
   const playerId = row.account_id;
   const itemId = row.template_id;
@@ -43,14 +43,14 @@ async function processDelivery(row) {
   
   // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
   const cmd = `~/dune-awakening-selfhost-docker/runtime/scripts/dune admin grant-item-id ${playerId} ${itemId} ${quantity} 1 ${quality}`;
-  console.log(`Executing: ${cmd}`);
+  console.log(`Executing RCON: ${cmd}`);
   
   const result = await runCommand(cmd);
   
   const client = await pool.connect();
   try {
     if (result.ok) {
-      console.log(`Successfully instantly dropped item! Marking as applied.`);
+      console.log(`Successfully dropped item! Marking as applied.`);
       await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     } else {
       console.error(`Failed to drop item for delivery ID ${row.id}:`, result.error || result.stderr || result.stdout);
@@ -60,6 +60,19 @@ async function processDelivery(row) {
     console.error("Error updating delivery status:", err);
   } finally {
     client.release();
+  }
+}
+
+async function processDelivery(row) {
+  // Wait 30 seconds from the time the delivery was created so players can load in
+  const ageMs = Date.now() - new Date(row.created_at).getTime();
+  const delayMs = Math.max(0, 30000 - ageMs);
+
+  if (delayMs > 0) {
+    console.log(`Delaying delivery ID ${row.id} by ${Math.round(delayMs / 1000)} seconds to accommodate loading screens...`);
+    setTimeout(() => executeDelivery(row), delayMs);
+  } else {
+    executeDelivery(row);
   }
 }
 
@@ -74,6 +87,22 @@ async function start() {
   } catch (err) {
     console.error("CRITICAL: Failed to connect to database!", err.message);
     process.exit(1);
+  }
+
+  // Catch up on any pending deliveries that were missed while the daemon was offline
+  try {
+    console.log("Checking for pending deliveries...");
+    const res = await client.query('SELECT * FROM dune.bot_pending_deliveries WHERE is_applied = false');
+    if (res.rows.length > 0) {
+      console.log(`Found ${res.rows.length} pending deliveries. Processing...`);
+      for (const row of res.rows) {
+        await processDelivery(row);
+      }
+    } else {
+      console.log("No pending deliveries found.");
+    }
+  } catch (err) {
+    console.error("Error checking for pending deliveries:", err);
   }
 
   // Subscribe to the new_airdrop channel
