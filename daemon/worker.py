@@ -64,6 +64,7 @@ def calculate_distance(x1, y1, z1, x2, y2, z2):
 def track_playtime(conn):
     try:
         cfg = load_config(conn)
+
         playtime_enabled = cfg.get("playtime_enabled", True)
         interval_min = cfg.get("playtime_interval", 60)
         min_dist = cfg.get("playtime_distance", 10.0)
@@ -177,12 +178,16 @@ def main():
         try:
             conn = get_db_connection()
             
-            now = time.time()
-            if now - last_heartbeat >= HEARTBEAT_INTERVAL_SEC:
-                ping_heartbeat(conn)
-                last_heartbeat = now
+            cfg = load_config(conn)
+            daemon_enabled = cfg.get("daemon_enabled", True)
             
-            track_playtime(conn)
+            if daemon_enabled:
+                now = time.time()
+                if now - last_heartbeat >= HEARTBEAT_INTERVAL_SEC:
+                    ping_heartbeat(conn)
+                    last_heartbeat = now
+                
+                track_playtime(conn)
             
             conn.close()
         except Exception as e:

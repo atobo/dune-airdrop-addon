@@ -149,7 +149,8 @@ async function loadSettings() {
       daily_max_streak: 7,
       weekly_enabled: true,
       weekly_days_required: 5,
-      weekly_multiplier: 5.0
+      weekly_multiplier: 5.0,
+      daemon_enabled: true
     };
     if (res && res.length > 0 && res[0].config_value) {
       mults = { ...mults, ...res[0].config_value };
@@ -163,6 +164,7 @@ async function loadSettings() {
     playtimeDistanceSlider.value = mults.playtime_distance !== undefined ? mults.playtime_distance : 10.0;
     playtimeXpInput.value = mults.playtime_xp !== undefined ? mults.playtime_xp : 1;
     playtimeXpSlider.value = mults.playtime_xp !== undefined ? mults.playtime_xp : 1;
+    document.getElementById('daemonEnabledToggle').checked = mults.daemon_enabled !== undefined ? mults.daemon_enabled : true;
 
     // Load Daily inputs
     document.getElementById('dailyEnabledToggle').checked = mults.daily_enabled !== undefined ? mults.daily_enabled : true;
@@ -210,7 +212,8 @@ async function handleSaveAllSettings() {
       daily_max_streak: parseInt(document.getElementById('dailyMaxStreakInput').value) || 7,
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
       weekly_days_required: parseInt(document.getElementById('weeklyDaysRequiredInput').value) || 5,
-      weekly_multiplier: parseFloat(document.getElementById('weeklyMultiplierInput').value) || 5.0
+      weekly_multiplier: parseFloat(document.getElementById('weeklyMultiplierInput').value) || 5.0,
+      daemon_enabled: document.getElementById('daemonEnabledToggle').checked
     };
 
     for (let t = 0; t <= 6; t++) {
