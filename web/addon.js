@@ -2,6 +2,18 @@
  * Arrakis Manager Console Addon Controller
  */
 
+// Security Utils
+const escapeHTML = (str) => {
+  if (str == null) return '';
+  return String(str).replace(/[&<>'"]/g, tag => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[tag]));
+};
+
 // Tab Navigation elements
 const tabSettingsBtn = document.getElementById('tabSettingsBtn');
 const settingsView = document.getElementById('settingsView');
@@ -240,6 +252,30 @@ async function handleSaveAllSettings() {
   }
 }
 
+async function handleInitializeSchema() {
+  if (isSandboxMode) {
+    showToast('Mock: Database schema initialized successfully!', 'success');
+    return;
+  }
+  
+  try {
+    showToast('Loading SQL schema from addon package...', 'success');
+    const response = await fetch('../setup_playtime_airdrops.sql');
+    if (!response.ok) throw new Error('Failed to fetch SQL file.');
+    
+    const sqlQuery = await response.text();
+    
+    showToast('Executing schema creation... This may take a moment.', 'success');
+    await window.DuneAddon.request("database.execute", {
+      query: sqlQuery
+    });
+    
+    showToast('Database schema and triggers initialized successfully!', 'success');
+  } catch (err) {
+    showToast(`Schema init failed: ${err.message}`, 'error');
+  }
+}
+
 async function fetchDiagnostics() {
   if (isSandboxMode) return;
 
@@ -278,12 +314,12 @@ async function fetchDiagnostics() {
 
       return `
         <tr class="border-b border-slate-900/40 hover:bg-slate-900/20 font-mono">
-          <td class="py-2 text-slate-300">${p.name}</td>
+          <td class="py-2 text-slate-300">${escapeHTML(p.name)}</td>
           <td class="py-2 text-slate-400">${activeMin}m / ${limitMin}m</td>
           <td class="py-2 text-slate-400">${nextMin}m left</td>
           <td class="py-2 text-slate-400">${p.consecutive_days || 0} Days</td>
           <td class="py-2 text-slate-400">${weeklyLogins} / ${weeklyReq}</td>
-          <td class="py-2 text-right text-slate-500">${p.map}</td>
+          <td class="py-2 text-right text-slate-500">${escapeHTML(p.map)}</td>
           <td class="py-2 text-right">
             <button onclick="testResetDaily(${p.character_id})" class="text-[10px] bg-red-900/40 hover:bg-red-800 text-red-200 px-2 py-1 rounded">Reset Daily</button>
             <button onclick="testSetWeekly(${p.character_id})" class="text-[10px] bg-blue-900/40 hover:bg-blue-800 text-blue-200 px-2 py-1 rounded ml-1">Set 5/5</button>
@@ -316,7 +352,7 @@ async function fetchPendingAirdrops() {
     const selected = airdropPlayerSelect.value;
     const names = [...new Set(pendingAirdropsData.map(d => d.character_name))].sort();
     airdropPlayerSelect.innerHTML = '<option value="all">All Characters</option>' + 
-      names.map(n => `<option value="${n}">${n}</option>`).join('');
+      names.map(n => `<option value="${escapeHTML(n)}">${escapeHTML(n)}</option>`).join('');
     if (names.includes(selected) || selected === 'all') {
       airdropPlayerSelect.value = selected;
     }
@@ -342,8 +378,8 @@ function renderPendingAirdrops() {
 
   pendingAirdropsTableBody.innerHTML = filtered.map(d => `
     <tr class="border-b border-slate-900/40 hover:bg-slate-900/20 font-mono text-xs">
-      <td class="py-1.5 text-slate-300">${d.character_name}</td>
-      <td class="py-1.5 text-amber-500 font-bold">${d.template_id}</td>
+      <td class="py-1.5 text-slate-300">${escapeHTML(d.character_name)}</td>
+      <td class="py-1.5 text-amber-500 font-bold">${escapeHTML(d.template_id)}</td>
       <td class="py-1.5 text-right text-slate-300 font-bold">${d.stack_size}</td>
     </tr>
   `).join('');
@@ -366,7 +402,7 @@ function showToast(message, type = 'success') {
   }
   
   const icon = type === 'success' ? '✅' : (type === 'error' ? '❌' : '⚠️');
-  toast.innerHTML = `<span>${icon}</span> <span class="flex-1">${message}</span>`;
+  toast.innerHTML = `<span>${icon}</span> <span class="flex-1">${escapeHTML(message)}</span>`;
   
   container.appendChild(toast);
   
@@ -410,6 +446,7 @@ function loadMockData() {
 
 // Globals exports
 window.handleSaveAllSettings = handleSaveAllSettings;
+window.handleInitializeSchema = handleInitializeSchema;
 window.showToast = showToast;
 
 window.testResetDaily = async function(characterId) {

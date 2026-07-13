@@ -23,7 +23,7 @@ PACKAGE_NAME="${ADDON_ID}-${ADDON_VERSION}.zip"
 rm -rf dist
 mkdir -p dist
 
-zip -r "dist/${PACKAGE_NAME}" addon.json web -x "*.DS_Store" >/dev/null
+zip -r "dist/${PACKAGE_NAME}" addon.json web daemon setup_playtime_airdrops.sql README.md -x "*.DS_Store" >/dev/null
 
 echo "Created: dist/${PACKAGE_NAME}"
 
