@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS dune.bot_active_playtime (
   last_login_date DATE,
   consecutive_days INT DEFAULT 0,
   weekly_login_mask INT DEFAULT 0,
+  current_week_id INT DEFAULT 0,
   last_weekly_claimed_at TIMESTAMP WITH TIME ZONE
 );
 ALTER TABLE IF EXISTS dune.bot_active_playtime ALTER COLUMN character_id TYPE BIGINT USING character_id::bigint;
@@ -287,7 +288,8 @@ DECLARE
   v_multiplier NUMERIC := 1.0;
   v_weekly_days_count INT := 0;
   v_mask INT := 0;
-  v_today_bit INT;
+  v_current_week_id INT;
+  v_day_of_week INT;
   v_i INT;
 BEGIN
   -- Load configurations
@@ -303,15 +305,26 @@ BEGIN
 
   v_tier := dune.fn_get_pawn_tier(p_pawn_id);
 
+  -- Determine the current Coriolis Week ID and Day of Week
+  -- Coriolis hits Tuesday ~05:00 UTC. We will use Tuesday 00:00 as the exact start of the week.
+  -- By shifting ISO day backwards by 1 (i.e. CURRENT_DATE - INTERVAL '1 day'), Tuesday becomes the start of the ISO week.
+  v_current_week_id := (EXTRACT(YEAR FROM v_today - INTERVAL '1 day')::INT * 100) + EXTRACT(WEEK FROM v_today - INTERVAL '1 day')::INT;
+  
+  -- Calculate day of week index relative to Tuesday (0 = Tuesday, 1 = Wednesday, ... 6 = Monday)
+  -- ISODOW returns 1 (Monday) to 7 (Sunday)
+  v_day_of_week := (EXTRACT(ISODOW FROM v_today)::INT + 5) % 7;
+
   -- Fetch player stats record
   SELECT * INTO v_track FROM dune.bot_active_playtime WHERE character_id = p_pawn_id;
   IF v_track.character_id IS NULL THEN
     -- Initialize if missing
-    INSERT INTO dune.bot_active_playtime (character_id, last_login_date, consecutive_days, weekly_login_mask)
-    VALUES (p_pawn_id, v_today, 1, 1);
+    INSERT INTO dune.bot_active_playtime (character_id, last_login_date, consecutive_days, weekly_login_mask, current_week_id)
+    VALUES (p_pawn_id, v_today, 1, (1 << v_day_of_week), v_current_week_id);
+    
     v_track.last_login_date := v_today;
     v_track.consecutive_days := 1;
-    v_track.weekly_login_mask := 1;
+    v_track.weekly_login_mask := (1 << v_day_of_week);
+    v_track.current_week_id := v_current_week_id;
   END IF;
 
   -- Process Daily Reward (Only once per calendar date)
@@ -323,16 +336,22 @@ BEGIN
       v_streak := 1;
     END IF;
 
-    -- Update weekly mask. We represent weekly logins using a 7-bit mask.
-    -- Shift previous bits left by the number of days passed to correctly 0-out missed days.
-    v_mask := ((v_track.weekly_login_mask << (v_today - COALESCE(v_track.last_login_date, v_today - 1))) | 1) & 127;
+    -- Update weekly mask based on Coriolis cycle
+    IF COALESCE(v_track.current_week_id, 0) != v_current_week_id THEN
+      -- A new Coriolis cycle has begun! Reset the mask for the new week.
+      v_mask := (1 << v_day_of_week);
+    ELSE
+      -- Still in the same cycle. Set the bit for today.
+      v_mask := v_track.weekly_login_mask | (1 << v_day_of_week);
+    END IF;
 
     -- Update tracking stats
     UPDATE dune.bot_active_playtime 
     SET 
       last_login_date = v_today, 
       consecutive_days = v_streak,
-      weekly_login_mask = v_mask
+      weekly_login_mask = v_mask,
+      current_week_id = v_current_week_id
     WHERE character_id = p_pawn_id;
 
     -- Roll and Deliver Daily Reward if enabled
