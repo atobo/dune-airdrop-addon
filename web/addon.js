@@ -284,7 +284,7 @@ async function fetchDiagnostics() {
     let activeMap = {};
     try {
       const activeRes = await window.DuneAddon.request("database.query", {
-        query: `SELECT character_id, active_seconds FROM dune.bot_active_playtime`
+        query: `SELECT character_id, active_seconds, consecutive_days, weekly_login_mask FROM dune.bot_active_playtime`
       });
       let activeRows = [];
       if (Array.isArray(activeRes)) {
@@ -296,7 +296,11 @@ async function fetchDiagnostics() {
       }
       if (activeRows.length > 0) {
         activeRows.forEach(row => {
-          activeMap[row.character_id] = row.active_seconds;
+          activeMap[row.character_id] = {
+            seconds: row.active_seconds || 0,
+            streak: row.consecutive_days || 0,
+            mask: row.weekly_login_mask || 0
+          };
         });
       }
     } catch (dbErr) {
@@ -307,17 +311,28 @@ async function fetchDiagnostics() {
       // Find matching player by character_id or matching character name to show correct time left
       const pName = p.name || p.characterName || 'Unknown';
       const pId = (p.characterId || p.id || pName).toString();
-      const activeSeconds = activeMap[pId] || activeMap[pName] || 0;
+      const stats = activeMap[pId] || activeMap[pName] || { seconds: 0, streak: 0, mask: 0 };
       
+      const activeSeconds = stats.seconds;
       const activeMin = Math.floor(activeSeconds / 60);
       const limitMin = parseInt(playtimeIntervalInput.value) || 60;
       const nextMin = Math.max(0, limitMin - activeMin);
+
+      // Format weekly mask progress out of required weekly cap
+      const maskVal = stats.mask;
+      let daysLogged = 0;
+      for (let i = 0; i < 7; i++) {
+        if ((maskVal & (1 << i)) !== 0) daysLogged++;
+      }
+      const reqDays = parseInt(weeklyDaysRequiredInput.value) || 5;
+      const weeklyProgress = `${daysLogged}/${reqDays}d`;
 
       return `
         <tr class="border-b border-slate-900/40 hover:bg-slate-900/20 font-mono">
           <td class="py-2 text-slate-300">${pName}</td>
           <td class="py-2 text-slate-400">${activeMin}m / ${limitMin}m</td>
-          <td class="py-2 text-slate-400">${nextMin}m left</td>
+          <td class="py-2 text-amber-500 font-bold">${stats.streak} days</td>
+          <td class="py-2 text-emerald-400 font-semibold">${weeklyProgress}</td>
           <td class="py-2 text-right text-slate-500">${p.map || 'Unknown'}</td>
         </tr>
       `;
