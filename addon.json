@@ -4,7 +4,7 @@
   "name": "Airdrop Manager",
   "description": "Standalone manager for playtime, daily streak, and weekly attendance-based G0 instant airdrops.",
   "author": "Antigravity & atobo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "ui",
   "entry": {
     "navigation": "Airdrop Manager",
