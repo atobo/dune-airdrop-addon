@@ -127,11 +127,8 @@ BEGIN
     ORDER BY RANDOM()
     LIMIT 1;
 
-    IF p_tier = 6 THEN
-      IF RANDOM() <= 0.35 THEN v_gear_quality := 2; ELSE v_gear_quality := 1; END IF;
-    ELSE
-      v_gear_quality := 0;
-    END IF;
+    -- Keep all gear quality levels at 0 to support instant delivery without forcing relogs
+    v_gear_quality := 0;
   END IF;
 
   -- Roll Resources
