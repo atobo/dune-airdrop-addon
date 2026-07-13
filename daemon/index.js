@@ -53,8 +53,8 @@ async function executeDelivery(row) {
       console.log(`Successfully dropped item! Marking as applied.`);
       await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     } else {
-      console.error(`Failed to drop item for delivery ID ${row.id}:`, result.error || result.stderr || result.stdout);
-      await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+      console.error(`Failed to drop item for delivery ID ${row.id} (Player might be offline?):`, result.error || result.stderr || result.stdout);
+      console.log(`Keeping delivery ID ${row.id} in the queue to retry later.`);
     }
   } catch (err) {
     console.error("Error updating delivery status:", err);
@@ -76,6 +76,26 @@ async function processDelivery(row) {
   }
 }
 
+async function checkPendingDeliveries() {
+  const client = await pool.connect();
+  try {
+    const res = await client.query('SELECT * FROM dune.bot_pending_deliveries WHERE is_applied = false');
+    if (res.rows.length > 0) {
+      for (const row of res.rows) {
+        // Only retry if it's older than 60 seconds (since recent ones are already in the setTimeout queue)
+        const ageMs = Date.now() - new Date(row.created_at).getTime();
+        if (ageMs > 60000) {
+           await executeDelivery(row);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error checking for pending deliveries:", err);
+  } finally {
+    client.release();
+  }
+}
+
 async function start() {
   console.log("Starting Dune Airdrop Node.js Delivery Daemon...");
   console.log("Attempting to connect to database at", DB_URL, "...");
@@ -89,21 +109,10 @@ async function start() {
     process.exit(1);
   }
 
-  // Catch up on any pending deliveries that were missed while the daemon was offline
-  try {
-    console.log("Checking for pending deliveries...");
-    const res = await client.query('SELECT * FROM dune.bot_pending_deliveries WHERE is_applied = false');
-    if (res.rows.length > 0) {
-      console.log(`Found ${res.rows.length} pending deliveries. Processing...`);
-      for (const row of res.rows) {
-        await processDelivery(row);
-      }
-    } else {
-      console.log("No pending deliveries found.");
-    }
-  } catch (err) {
-    console.error("Error checking for pending deliveries:", err);
-  }
+  // Catch up on boot and start the retry loop every 30 seconds
+  console.log("Starting pending delivery retry loop...");
+  checkPendingDeliveries();
+  setInterval(checkPendingDeliveries, 30000);
 
   // Subscribe to the new_airdrop channel
   await client.query('LISTEN new_airdrop');
