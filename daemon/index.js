@@ -40,6 +40,27 @@ async function runCommand(executable, args) {
 }
 
 async function executeDelivery(row) {
+  const clientLock = await pool.connect();
+  try {
+    // Atomic lock claim
+    const updateRes = await clientLock.query(`
+      UPDATE dune.bot_pending_deliveries 
+      SET locked_at = NOW() 
+      WHERE id = $1 AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')
+      RETURNING *
+    `, [row.id]);
+    
+    if (updateRes.rowCount === 0) {
+      clientLock.release();
+      return; // Already claimed or processed by another worker
+    }
+  } catch (err) {
+    console.error("Error claiming delivery:", err);
+    clientLock.release();
+    return;
+  }
+  clientLock.release();
+
   console.log(`Executing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
   
   const playerId = row.account_id;
@@ -87,7 +108,11 @@ async function processDelivery(row) {
 async function checkPendingDeliveries() {
   const client = await pool.connect();
   try {
-    const res = await client.query('SELECT * FROM dune.bot_pending_deliveries WHERE is_applied = false');
+    const res = await client.query(`
+      SELECT * FROM dune.bot_pending_deliveries 
+      WHERE is_applied = false 
+      AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')
+    `);
     if (res.rows.length > 0) {
       for (const row of res.rows) {
         // Only retry if it's older than 60 seconds (since recent ones are already in the setTimeout queue)
@@ -106,7 +131,8 @@ async function checkPendingDeliveries() {
 
 async function start() {
   console.log("Starting Dune Airdrop Node.js Delivery Daemon...");
-  console.log("Attempting to connect to database at", DB_URL, "...");
+  const sanitizedUrl = DB_URL.replace(/:([^:@]+)@/, ':***@');
+  console.log("Attempting to connect to database at", sanitizedUrl, "...");
   
   let client;
   try {

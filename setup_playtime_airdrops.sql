@@ -21,13 +21,16 @@ ALTER TABLE IF EXISTS dune.bot_active_playtime ALTER COLUMN character_id TYPE BI
 -- 2. Create pending deliveries queue table
 CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
   id SERIAL PRIMARY KEY,
-  account_id INT NOT NULL,
+  account_id BIGINT NOT NULL,
   template_id TEXT NOT NULL,
   stack_size INT NOT NULL,
   quality_level INT DEFAULT 0,
   is_applied BOOLEAN DEFAULT false,
+  locked_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+ALTER TABLE IF EXISTS dune.bot_pending_deliveries ALTER COLUMN account_id TYPE BIGINT USING account_id::bigint;
+ALTER TABLE IF EXISTS dune.bot_pending_deliveries ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP WITH TIME ZONE;
 
 -- Notification function for the Node daemon
 CREATE OR REPLACE FUNCTION dune.trg_notify_pending_delivery()
@@ -559,10 +562,9 @@ CREATE TABLE IF NOT EXISTS dune.airdrop_loot_tables (
   tier INT,
   category TEXT,
   template_id TEXT,
-  weight INT
+  weight INT,
+  UNIQUE(tier, category, template_id)
 );
-
-TRUNCATE TABLE dune.airdrop_loot_tables;
 
 INSERT INTO dune.airdrop_loot_tables (tier, category, template_id, weight) VALUES
 (0, 'raw_resources', 'PlantFiber', 100),
@@ -2206,7 +2208,8 @@ INSERT INTO dune.airdrop_loot_tables (tier, category, template_id, weight) VALUE
 (6, 'schematics', 'T6_Augment_Ch5_Shotgun1_Schematic', 100),
 (6, 'schematics', 'T6_Augment_Ch5_SMG1_Schematic', 100),
 (6, 'schematics', 'T6_Augment_Ch5_Melee1_Schematic', 100),
-(6, 'schematics', 'T6_Augment_Ch5_Melee3_Schematic', 100);
+(6, 'schematics', 'T6_Augment_Ch5_Melee3_Schematic', 100)
+ON CONFLICT (tier, category, template_id) DO NOTHING;
 
 -- ==========================================
 -- [END AUTO-GENERATED LOOT POOLS]

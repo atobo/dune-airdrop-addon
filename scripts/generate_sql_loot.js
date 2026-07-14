@@ -178,10 +178,10 @@ sqlOutput += `CREATE TABLE IF NOT EXISTS dune.airdrop_loot_tables (
   tier INT,
   category TEXT,
   template_id TEXT,
-  weight INT
+  weight INT,
+  UNIQUE(tier, category, template_id)
 );\n\n`;
 
-sqlOutput += `TRUNCATE TABLE dune.airdrop_loot_tables;\n\n`;
 sqlOutput += `INSERT INTO dune.airdrop_loot_tables (tier, category, template_id, weight) VALUES\n`;
 
 const valuesList = [];
@@ -218,7 +218,7 @@ if (valuesList.length === 0) {
   valuesList.push(`(0, 'resources', 'ScrapMetal', 100)`);
 }
 
-sqlOutput += valuesList.join(',\n') + ';\n\n';
+sqlOutput += valuesList.join(',\n') + '\nON CONFLICT (tier, category, template_id) DO NOTHING;\n\n';
 sqlOutput += `-- ==========================================`;
 
 // Read the SQL file, replace the section between markers
