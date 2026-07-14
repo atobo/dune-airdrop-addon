@@ -1,5 +1,7 @@
 # Dune Airdrop Addon
 
+![Dune Airdrop Concept Art](assets/dune_airdrop_art.png)
+
 A powerful, customizable, and automated playtime tracking and rewards system for Dune Awakening self-hosted servers, designed exclusively for the RedBlink Console.
 
 ## Features
