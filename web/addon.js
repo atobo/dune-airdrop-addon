@@ -176,7 +176,10 @@ async function loadSettings() {
     playtimeDistanceSlider.value = mults.playtime_distance !== undefined ? mults.playtime_distance : 10.0;
     playtimeXpInput.value = mults.playtime_xp !== undefined ? mults.playtime_xp : 1;
     playtimeXpSlider.value = mults.playtime_xp !== undefined ? mults.playtime_xp : 1;
-    document.getElementById('daemonEnabledToggle').checked = mults.daemon_enabled !== undefined ? mults.daemon_enabled : true;
+    const daemonToggle = document.getElementById('daemonEnabledToggle');
+    if (daemonToggle) {
+      daemonToggle.checked = mults.daemon_enabled !== undefined ? mults.daemon_enabled : true;
+    }
 
     // Load Daily inputs
     document.getElementById('dailyEnabledToggle').checked = mults.daily_enabled !== undefined ? mults.daily_enabled : true;
@@ -228,7 +231,7 @@ async function handleSaveAllSettings() {
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
       weekly_days_required: getInt(document.getElementById('weeklyDaysRequiredInput').value, 5),
       weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0),
-      daemon_enabled: document.getElementById('daemonEnabledToggle').checked
+      daemon_enabled: document.getElementById('daemonEnabledToggle') ? document.getElementById('daemonEnabledToggle').checked : true
     };
 
     for (let t = 0; t <= 6; t++) {
