@@ -1,13 +1,10 @@
-FROM python:3.11-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install postgres client dependencies
-RUN apk add --no-cache libpq
+COPY package*.json ./
+RUN npm install --omit=dev
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
 
-COPY worker.py .
-
-CMD ["python", "-u", "worker.py"]
+CMD ["node", "index.js"]
