@@ -10,8 +10,6 @@
     "navigation": "Airdrop Manager",
     "path": "web/index.html"
   },
-  "worker": "daemon/index.js",
-  "schema": "setup_playtime_airdrops.sql",
   "permissions": {
     "database": ["read", "write"]
   }

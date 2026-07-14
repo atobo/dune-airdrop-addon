@@ -40,26 +40,6 @@ async function runCommand(executable, args) {
 }
 
 async function executeDelivery(row) {
-  const clientLock = await pool.connect();
-  try {
-    // Atomic lock claim
-    const updateRes = await clientLock.query(`
-      UPDATE dune.bot_pending_deliveries 
-      SET locked_at = NOW() 
-      WHERE id = $1 AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')
-      RETURNING *
-    `, [row.id]);
-    
-    if (updateRes.rowCount === 0) {
-      clientLock.release();
-      return; // Already claimed or processed by another worker
-    }
-  } catch (err) {
-    console.error("Error claiming delivery:", err);
-    clientLock.release();
-    return;
-  }
-  clientLock.release();
 
   console.log(`Executing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
   
@@ -98,29 +78,38 @@ async function processDelivery(row) {
   const delayMs = Math.max(0, 60000 - ageMs);
 
   if (delayMs > 0) {
-    console.log(`Delaying delivery ID ${row.id} by ${Math.round(delayMs / 1000)} seconds to accommodate loading screens...`);
-    setTimeout(() => executeDelivery(row), delayMs);
+    console.log(`Delaying delivery processing by ${Math.round(delayMs / 1000)} seconds to accommodate loading screens...`);
+    setTimeout(() => checkPendingDeliveries(), delayMs);
   } else {
-    executeDelivery(row);
+    checkPendingDeliveries();
   }
 }
 
 async function checkPendingDeliveries() {
   const client = await pool.connect();
   try {
-    const res = await client.query(`
-      SELECT * FROM dune.bot_pending_deliveries 
-      WHERE is_applied = false 
-      AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')
-    `);
-    if (res.rows.length > 0) {
-      for (const row of res.rows) {
-        // Only retry if it's older than 60 seconds (since recent ones are already in the setTimeout queue)
-        const ageMs = Date.now() - new Date(row.created_at).getTime();
-        if (ageMs > 60000) {
-           await executeDelivery(row);
-        }
+    while (true) {
+      const res = await client.query(`
+        WITH claim AS (
+          SELECT id FROM dune.bot_pending_deliveries 
+          WHERE is_applied = false 
+            AND created_at < NOW() - INTERVAL '60 seconds'
+            AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        UPDATE dune.bot_pending_deliveries 
+        SET locked_at = NOW() 
+        FROM claim 
+        WHERE dune.bot_pending_deliveries.id = claim.id 
+        RETURNING dune.bot_pending_deliveries.*;
+      `);
+      
+      if (res.rows.length === 0) {
+        break; // No more pending deliveries to claim
       }
+      
+      await executeDelivery(res.rows[0]);
     }
   } catch (err) {
     console.error("Error checking for pending deliveries:", err);
