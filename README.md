@@ -10,24 +10,36 @@ A powerful, customizable, and automated playtime tracking and rewards system for
 
 ## Installation
 
-1. Copy the `dune-airdrop-addon` folder into your `addons/installed` directory.
-2. Refresh the RedBlink Console UI to complete the installation.
-3. Install the database backend:
+**Note on Addon Manager:** The Dune Console's addon manager natively supports UI-only addons. It will not automatically execute the required database schemas or manage the delivery daemon. You **must** manually run the SQL schema and start the background worker for this addon to function!
+
+1. Install the addon via the Dune Console UI.
+2. Install the database backend:
 ```bash
-sudo docker exec -i dune-postgres psql -U postgres -d dune < setup_playtime_airdrops.sql
+sudo docker exec -i dune-postgres psql -U postgres -d dune < addons/installed/dune-airdrop-addon/setup_playtime_airdrops.sql
 ```
-4. Start the companion daemon (See `daemon/README.md` for details):
+3. Start the companion daemon (Requires Node.js):
 ```bash
-cd daemon
+cd addons/installed/dune-airdrop-addon/daemon
 npm install
 pm2 start index.js --name "airdrop-daemon"
 ```
 
+## Uninstallation
+
+If you wish to remove the Airdrop Addon completely:
+1. Stop the daemon: `pm2 delete airdrop-daemon`
+2. Remove the database tables and triggers:
+```bash
+sudo docker exec -i dune-postgres psql -U postgres -d dune < addons/installed/dune-airdrop-addon/uninstall_playtime_airdrops.sql
+```
+3. Uninstall the addon via the Dune Console UI.
+
 ## Repository Layout
 
 ```text
-addon.json                 Addon identity, version, entry path, and permissions.
-setup_playtime_airdrops.sql PostgeSQL schemas and triggers for tracking & rewards.
-web/                       The addon page shown inside Dune Docker Console.
-daemon/                    The Node.js Delivery Daemon service.
+addon.json                       Addon identity, version, entry path, and permissions.
+setup_playtime_airdrops.sql      PostgreSQL schemas and triggers for tracking & rewards.
+uninstall_playtime_airdrops.sql  PostgreSQL cleanup script for uninstalling.
+web/                             The addon page shown inside Dune Docker Console.
+daemon/                          The Node.js Delivery Daemon service.
 ```
