@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS dune.bot_active_playtime (
   current_week_id INT DEFAULT 0,
   last_weekly_claimed_at TIMESTAMP WITH TIME ZONE
 );
+-- Migration: Ensure types and columns exist for older installations
 ALTER TABLE IF EXISTS dune.bot_active_playtime ALTER COLUMN character_id TYPE BIGINT USING character_id::bigint;
+ALTER TABLE IF EXISTS dune.bot_active_playtime ADD COLUMN IF NOT EXISTS current_week_id INT DEFAULT 0;
 
 -- 2. Create pending deliveries queue table
 CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
