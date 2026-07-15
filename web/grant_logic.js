@@ -5,10 +5,22 @@ function getStoredGrantState(storage) {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || !parsed.id || !parsed.status || !parsed.payload) {
-      storage.removeItem(STORAGE_KEY);
-      return null;
-    }
+    
+    if (!parsed || typeof parsed !== 'object') throw new Error('Not an object');
+    if (typeof parsed.id !== 'string' || !parsed.id.startsWith('manual:grant:')) throw new Error('Invalid ID');
+    if (parsed.status !== 'PENDING' && parsed.status !== 'UNCERTAIN') throw new Error('Invalid status');
+    
+    if (!parsed.payload || typeof parsed.payload !== 'object') throw new Error('Invalid payload');
+    const p = parsed.payload;
+    if (typeof p.playerId !== 'string' || p.playerId.trim() === '') throw new Error('Invalid playerId');
+    if (typeof p.itemId !== 'string' || p.itemId.trim() === '') throw new Error('Invalid itemId');
+    
+    if (!Number.isInteger(p.quantity) || p.quantity < 1 || p.quantity > 1000) throw new Error('Invalid quantity');
+    if (!Number.isInteger(p.quality) || p.quality < 0 || p.quality > 5) throw new Error('Invalid quality');
+    
+    // Hash check
+    if (parsed.hash !== computePayloadHash(p)) throw new Error('Hash mismatch');
+    
     return parsed;
   } catch (e) {
     storage.removeItem(STORAGE_KEY);

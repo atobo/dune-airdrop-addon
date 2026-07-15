@@ -34,6 +34,7 @@ const pendingAirdropsTableBody = document.getElementById('pendingAirdropsTableBo
 const airdropPlayerSelect = document.getElementById('airdropPlayerSelect');
 
 let pendingAirdropsData = [];
+let activeContainerId = null;
 
 // Determine if running inside the Dune Docker Console iframe
 const isSandboxMode = window.parent === window;
@@ -74,6 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadSettings();
     await fetchDiagnostics();
     await fetchPendingAirdrops();
+    await fetchContainers();
     
     // Set up polling intervals
     setInterval(fetchDiagnostics, 5000);
@@ -81,6 +83,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Wire up the manual spawn modal
     setupSpawnModal();
+    
+    // Wire up tabs if they exist
+    const settingsTab = document.getElementById('tabSettingsBtn');
+    const settingsView = document.getElementById('settingsView');
+    const lootView = document.getElementById('lootView');
+    
+    // Add tab for loot if missing, or just show loot view below settings
+    if (lootView) {
+      lootView.classList.remove('hidden');
+    }
   }
 });
 
@@ -177,12 +189,33 @@ function setupSpawnModal() {
     // The pure functions handle state clearing.
   });
 
-  // Original hook to open modal
-  const originalSelectContainer = window.selectContainer;
+  // Global selectContainer implementation
   window.selectContainer = async function(id) {
-    if (originalSelectContainer) await originalSelectContainer(id);
-    spawnItemTemplateInput.dataset.actId = id;
+    if (!/^[0-9]+$/.test(String(id))) {
+      showToast('Invalid container ID selected.', 'error');
+      return;
+    }
+    activeContainerId = String(id);
+    spawnItemTemplateInput.dataset.actId = activeContainerId;
+    
+    // Update UI highlights
+    const rows = document.querySelectorAll('.container-row');
+    rows.forEach(r => r.classList.remove('bg-amber-900/30', 'border-amber-500/50'));
+    const selectedRow = document.getElementById(`container-row-${id}`);
+    if (selectedRow) {
+      selectedRow.classList.add('bg-amber-900/30', 'border-amber-500/50');
+    }
+    
     if (openSpawnModalBtn) openSpawnModalBtn.classList.remove('hidden');
+    
+    // Clear container grid to show it is selected
+    const grid = document.getElementById('containerInventoryGrid');
+    if (grid) {
+      grid.innerHTML = `<div class="col-span-full py-12 text-center text-slate-500 font-mono italic">
+        Container ${escapeHTML(id)} selected. Ready to spawn items.
+      </div>`;
+    }
+
     handleStateCheck();
   };
 
@@ -224,10 +257,11 @@ function setupSpawnModal() {
       const res = await window.DuneAddon.request("database.query", {
         query: `SELECT account_id FROM dune.inventories WHERE id = ${actId}::bigint LIMIT 1`
       });
-      const account_id = (res.rows && res.rows[0] && res.rows[0].account_id) ? String(res.rows[0].account_id) : null;
+      
+      const account_id = (res.rows && res.rows.length === 1 && res.rows[0] && res.rows[0].account_id) ? String(res.rows[0].account_id) : null;
 
-      if (!account_id) {
-        throw new Error("Could not resolve player account.");
+      if (!account_id || account_id.trim() === '') {
+        throw new Error("Could not resolve exactly one nonempty player account.");
       }
 
       const newPayload = {
@@ -262,7 +296,9 @@ function setupSpawnModal() {
       if (outcome.success) {
         showToast(`Successfully spawned ${qNum}x ${templateId}`, 'success');
         updateUncertainStateUI(false);
-        await selectContainer(actId);
+        if (window.selectContainer) {
+          await window.selectContainer(actId);
+        }
         spawnItemModal.classList.add('hidden');
       } else {
         throw new Error(outcome.message);
@@ -600,6 +636,52 @@ function renderPendingAirdrops() {
     </tr>
   `).join('');
 }
+
+async function fetchContainers() {
+  if (isSandboxMode) return;
+  const tableBody = document.getElementById('lootContainersTableBody');
+  if (!tableBody) return;
+
+  try {
+    const rawList = await window.DuneAddon.request("database.query", {
+      query: `
+        SELECT 
+          i.id::text as id,
+          a.class,
+          a.owner_account_id
+        FROM dune.inventories i
+        JOIN dune.actors a ON i.actor_id = a.id
+        WHERE a.class ILIKE '%container%' OR a.class ILIKE '%chest%'
+        LIMIT 100
+      `
+    });
+    
+    const containers = rawList.rows || rawList || [];
+    
+    if (containers.length === 0) {
+      tableBody.innerHTML = `<tr><td colspan="4" class="py-4 text-center italic text-slate-500">No containers found.</td></tr>`;
+      return;
+    }
+    
+    tableBody.innerHTML = containers.map(c => {
+      const cls = c.class ? c.class.split('/').pop().replace('_C', '') : 'Unknown';
+      const isSelected = activeContainerId === c.id;
+      const highlight = isSelected ? 'bg-amber-900/30 border-amber-500/50' : '';
+      return `
+        <tr id="container-row-${escapeHTML(c.id)}" class="container-row border-b border-slate-900/40 hover:bg-slate-900/20 font-mono text-xs cursor-pointer ${highlight}" onclick="window.selectContainer('${escapeHTML(c.id)}')">
+          <td class="py-2 text-slate-400 font-bold">${escapeHTML(c.id)}</td>
+          <td class="py-2 text-amber-500">${escapeHTML(cls)}</td>
+          <td class="py-2 text-slate-300">${escapeHTML(c.owner_account_id || 'Unknown')}</td>
+          <td class="py-2 text-center text-slate-500">-</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Failed to load containers:', err);
+    tableBody.innerHTML = `<tr><td colspan="4" class="py-4 text-center italic text-rose-500">Error: ${escapeHTML(err.message)}</td></tr>`;
+  }
+}
+
 
 // --- UI Toasts ---
 function showToast(message, type = 'success') {

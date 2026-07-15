@@ -1,0 +1,24 @@
+QUERIES: [
+  {
+    "action": "database.query",
+    "payload": {
+      "query": "SELECT account_id FROM dune.inventories WHERE id = 9999999999999::bigint LIMIT 1"
+    }
+  },
+  {
+    "action": "database.query",
+    "payload": {
+      "query": "SELECT account_id FROM dune.inventories WHERE id = 9999999999999::bigint LIMIT 1"
+    }
+  },
+  {
+    "action": "admin.items.grant",
+    "payload": {
+      "playerId": "12345",
+      "itemId": "TestSword",
+      "quantity": 3,
+      "quality": 0,
+      "requestId": "manual:grant:1b6164e7-f058-43c8-86b2-7fa73b80e9f6"
+    }
+  }
+]

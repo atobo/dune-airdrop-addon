@@ -1,0 +1,81 @@
+
+> test
+> node --test tests/*.test.js
+
+TAP version 13
+# Subtest: getStoredGrantState handles corrupt localStorage
+ok 1 - getStoredGrantState handles corrupt localStorage
+  ---
+  duration_ms: 3.607517
+  type: 'test'
+  ...
+# Subtest: getStoredGrantState handles malformed valid JSON
+ok 2 - getStoredGrantState handles malformed valid JSON
+  ---
+  duration_ms: 0.437535
+  type: 'test'
+  ...
+# Subtest: determineActionAndState: New payload generates new state
+ok 3 - determineActionAndState: New payload generates new state
+  ---
+  duration_ms: 2.511511
+  type: 'test'
+  ...
+# Subtest: determineActionAndState: Retains same ID when payload matches (pending state)
+ok 4 - determineActionAndState: Retains same ID when payload matches (pending state)
+  ---
+  duration_ms: 0.32062
+  type: 'test'
+  ...
+# Subtest: determineActionAndState: Generates new ID when payload changes (pending state)
+ok 5 - determineActionAndState: Generates new ID when payload changes (pending state)
+  ---
+  duration_ms: 0.528956
+  type: 'test'
+  ...
+# Subtest: determineActionAndState: Rejects changes if state is UNCERTAIN
+ok 6 - determineActionAndState: Rejects changes if state is UNCERTAIN
+  ---
+  duration_ms: 0.294411
+  type: 'test'
+  ...
+# Subtest: determineActionAndState: Allows retry with exact same payload if UNCERTAIN
+ok 7 - determineActionAndState: Allows retry with exact same payload if UNCERTAIN
+  ---
+  duration_ms: 0.410072
+  type: 'test'
+  ...
+# Subtest: handleBridgeReceipt: Clears state on ok === true
+ok 8 - handleBridgeReceipt: Clears state on ok === true
+  ---
+  duration_ms: 0.428165
+  type: 'test'
+  ...
+# Subtest: handleBridgeReceipt: Transitions to UNCERTAIN on lost/failed response
+ok 9 - handleBridgeReceipt: Transitions to UNCERTAIN on lost/failed response
+  ---
+  duration_ms: 0.823955
+  type: 'test'
+  ...
+# Subtest: UI Integration - Full Container Selection and Grant Workflow
+not ok 10 - UI Integration - Full Container Selection and Grant Workflow
+  ---
+  duration_ms: 609.208105
+  type: 'test'
+  location: '/home/atobo/dune-awakening-selfhost-docker/runtime/addons/installed/dune-airdrop-addon/tests/ui_integration.test.js:8:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    3 !== 2
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 2
+  actual: 3
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/atobo/dune-awakening-selfhost-docker/runtime/addons/installed/dune-airdrop-addon/tests/ui_integration.test.js:110:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
