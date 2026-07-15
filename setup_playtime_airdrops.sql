@@ -328,11 +328,11 @@ BEGIN
   IF v_track.character_id IS NULL THEN
     -- Initialize if missing
     INSERT INTO dune.bot_active_playtime (character_id, last_login_date, consecutive_days, weekly_login_mask, current_week_id)
-    VALUES (p_pawn_id, v_today - INTERVAL '1 day', 1, (1 << v_day_of_week), v_current_week_id);
+    VALUES (p_pawn_id, v_today - INTERVAL '1 day', 0, 0, v_current_week_id);
     
     v_track.last_login_date := v_today - INTERVAL '1 day';
-    v_track.consecutive_days := 1;
-    v_track.weekly_login_mask := (1 << v_day_of_week);
+    v_track.consecutive_days := 0;
+    v_track.weekly_login_mask := 0;
     v_track.current_week_id := v_current_week_id;
   END IF;
 
@@ -423,15 +423,8 @@ DECLARE
   v_is_active BOOLEAN := FALSE;
   v_accumulated_seconds INT;
 BEGIN
-  -- Check daemon heartbeat
-  SELECT config_value INTO v_daemon FROM dune.discord_bot_config WHERE config_key = 'daemon_heartbeat';
-  IF v_daemon IS NOT NULL THEN
-    v_last_ping := (v_daemon->>'last_ping')::timestamp with time zone;
-    IF v_last_ping IS NOT NULL AND EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_last_ping)) < 120 THEN
-      -- Daemon is alive and handling tracking. Skip trigger execution to avoid double-counting.
-      RETURN NEW;
-    END IF;
-  END IF;
+  -- Daemon heartbeat check removed so DB handles tracking
+
 
   -- Only track if player's online status is 'online'
   IF LOWER(NEW.online_status::text) = 'online' THEN
