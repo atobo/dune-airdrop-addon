@@ -325,15 +325,18 @@
           <p class="text-slate-400">
             The daemon is a <span class="text-amber-500 font-bold">REQUIRED</span> background service. It listens to the database and executes real-time RCON commands to drop items into player inventories. Use the <span class="text-emerald-500 font-bold">INIT SCHEMA</span> button above before running it for the first time.
           </p>
-          <div class="bg-slate-950 p-3 rounded border border-slate-800 text-[11px] leading-relaxed select-all overflow-x-auto whitespace-pre font-mono"># 1. SSH into your server and enter the Addon Daemon directory
-cd /home/YOUR_USER/dune-awakening-selfhost-docker/runtime/addons/installed/dune-airdrop-addon/daemon/
+          <div class="bg-slate-950 p-3 rounded border border-slate-800 text-[11px] leading-relaxed select-all overflow-x-auto whitespace-pre font-mono"># 1. Enter the Addon Daemon directory
+cd runtime/addons/installed/dune-airdrop-addon/daemon/
 
-# 2. Install dependencies
-npm install
+# 2. Build the Docker image
+docker build -t airdrop-daemon .
 
-# 3. Start the daemon with PM2 (or node index.js)
-pm2 start index.js --name "airdrop-daemon"
-pm2 save</div>
+# 3. Start the background container
+docker rm -f airdrop-daemon
+docker run -d --name airdrop-daemon --network host \
+  -v $(pwd)/../../../../runtime:/runtime \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  airdrop-daemon</div>
         </div>
       </section>
     </div>

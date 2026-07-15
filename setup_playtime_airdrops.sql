@@ -328,9 +328,9 @@ BEGIN
   IF v_track.character_id IS NULL THEN
     -- Initialize if missing
     INSERT INTO dune.bot_active_playtime (character_id, last_login_date, consecutive_days, weekly_login_mask, current_week_id)
-    VALUES (p_pawn_id, v_today, 1, (1 << v_day_of_week), v_current_week_id);
+    VALUES (p_pawn_id, v_today - INTERVAL '1 day', 1, (1 << v_day_of_week), v_current_week_id);
     
-    v_track.last_login_date := v_today;
+    v_track.last_login_date := v_today - INTERVAL '1 day';
     v_track.consecutive_days := 1;
     v_track.weekly_login_mask := (1 << v_day_of_week);
     v_track.current_week_id := v_current_week_id;

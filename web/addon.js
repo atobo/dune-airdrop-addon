@@ -125,8 +125,8 @@ function setupSpawnModal() {
       if (invRes && invRes.length > 0) {
         const invId = invRes[0].id;
         await window.DuneAddon.request("database.execute", {
-          query: `INSERT INTO dune.items (inventory_id, template_id, stack_size, position_index, stats, quality_level)
-                  VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = $1), '{"FItemStackAndDurabilityStats": [[], {"DecayedMaxDurability": 0.0}]}'::jsonb, 0)`,
+          query: `INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
+                  VALUES ((SELECT account_id FROM dune.inventories WHERE id = $1), $2, $3, false, 0)`,
           params: [invId, templateId, qty]
         });
         showToast(`Successfully spawned ${qty}x ${templateId}`, 'success');
@@ -230,8 +230,7 @@ async function handleSaveAllSettings() {
       daily_max_streak: getInt(document.getElementById('dailyMaxStreakInput').value, 7),
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
       weekly_days_required: getInt(document.getElementById('weeklyDaysRequiredInput').value, 5),
-      weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0),
-      daemon_enabled: document.getElementById('daemonEnabledToggle') ? document.getElementById('daemonEnabledToggle').checked : true
+      weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0)
     };
 
     for (let t = 0; t <= 6; t++) {

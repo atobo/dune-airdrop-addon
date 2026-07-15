@@ -88,13 +88,22 @@ async function processDelivery(row) {
 async function checkPendingDeliveries() {
   const client = await pool.connect();
   try {
+    // Check if the daemon is enabled in the configuration
+    const configRes = await client.query(`SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers'`);
+    if (configRes.rows.length > 0) {
+      const config = configRes.rows[0].config_value;
+      if (config.daemon_enabled === false) {
+        return; // Daemon is disabled, skip processing
+      }
+    }
+
     while (true) {
       const res = await client.query(`
         WITH claim AS (
           SELECT id FROM dune.bot_pending_deliveries 
           WHERE is_applied = false 
             AND created_at < NOW() - INTERVAL '60 seconds'
-            AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')
+            AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '30 seconds')
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
@@ -157,6 +166,22 @@ async function start() {
     console.error("Fatal database connection error:", err.message);
     process.exit(1);
   });
+
+  // Start the heartbeat loop every 15 seconds
+  setInterval(async () => {
+    const hbClient = await pool.connect();
+    try {
+      await hbClient.query(`
+        INSERT INTO dune.discord_bot_config (config_key, config_value) 
+        VALUES ('daemon_heartbeat', jsonb_build_object('last_ping', NOW()))
+        ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value;
+      `);
+    } catch (err) {
+      console.error("Failed to write daemon heartbeat:", err);
+    } finally {
+      hbClient.release();
+    }
+  }, 15000);
 }
 
 start();

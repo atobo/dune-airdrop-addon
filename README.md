@@ -10,26 +10,31 @@ A powerful, customizable, and automated playtime tracking and rewards system for
 - **Daily & Weekly Login Rewards:** Calculates and manages sequential daily login streaks and weekly activity thresholds.
 - **Node.js Delivery Daemon:** A lightweight external service that interfaces with PostgreSQL Pub/Sub to instantly deliver items in-game via RCON with a smart 60-second loading screen delay and offline retry loop.
 
-## Installation
+## 1. Installation
 
-**Note on Addon Manager:** The Dune Console's addon manager natively supports UI-only addons. It will not automatically execute the required database schemas or manage the delivery daemon. You **must** manually run the SQL schema and start the background worker for this addon to function!
+1. Copy the `dune-airdrop-addon` folder into your `runtime/addons/installed/` directory.
+2. In the RedBlink UI, click **INIT SCHEMA**. Wait for it to complete.
 
-1. Install the addon via the Dune Console UI.
-2. Install the database backend:
+## 2. Running the Daemon
+
+Because RedBlink addons are UI-only, the companion Node daemon must be built and run manually using Docker on your host machine:
+
 ```bash
-sudo docker exec -i dune-postgres psql -U postgres -d dune < addons/installed/dune-airdrop-addon/setup_playtime_airdrops.sql
+cd runtime/addons/installed/dune-airdrop-addon/daemon
+docker build -t airdrop-daemon .
+docker rm -f airdrop-daemon
+docker run -d --name airdrop-daemon --network host \
+  -v $(pwd)/../../../../runtime:/runtime \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  airdrop-daemon
 ```
-3. Start the companion daemon (Requires Node.js):
-```bash
-cd addons/installed/dune-airdrop-addon/daemon
-npm install
-pm2 start index.js --name "airdrop-daemon"
-```
+
+To stop the daemon, run `docker rm -f airdrop-daemon`.
 
 ## Uninstallation
 
 If you wish to remove the Airdrop Addon completely:
-1. Stop the daemon: `pm2 delete airdrop-daemon`
+1. Stop the daemon: `docker rm -f airdrop-daemon`
 2. Remove the database tables and triggers:
 ```bash
 sudo docker exec -i dune-postgres psql -U postgres -d dune < addons/installed/dune-airdrop-addon/uninstall_playtime_airdrops.sql
