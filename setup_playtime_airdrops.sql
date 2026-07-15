@@ -476,6 +476,19 @@ BEGIN
 
   -- Only track if player's online status is 'online'
   IF LOWER(NEW.online_status::text) = 'online' THEN
+    -- THROTTLE: Prevent lag spikes from rapid inventory updates (e.g. dumping items in containers)
+    -- Check when we last evaluated this player. If it was less than 60 seconds ago, exit early.
+    SELECT last_active_at INTO v_prev_active 
+    FROM dune.bot_active_playtime 
+    WHERE character_id = NEW.player_pawn_id;
+
+    IF v_prev_active IS NOT NULL THEN
+      v_delta_seconds := EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_prev_active))::INT;
+      IF v_delta_seconds < 60 THEN
+        RETURN NEW;
+      END IF;
+    END IF;
+
     -- Load configurations
     SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
     IF v_config IS NOT NULL THEN
