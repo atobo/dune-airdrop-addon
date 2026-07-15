@@ -223,98 +223,239 @@
         </div>
       </section>
       
-      <!-- Playtime Multipliers per Tier -->
-      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col">
+            
+      <!-- Airdrop Economy Config -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col mt-6">
         <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 border-b border-slate-800 pb-2 flex items-center">
-          <span class="mr-2">🎁</span> Playtime Airdrop scaling per Tier
+          <span class="mr-2">💰</span> Airdrop Economy & Probabilities
         </h2>
-        <div class="space-y-4 font-mono text-xs max-h-[600px] overflow-y-auto pr-1">
-          <!-- T0 Multiplier -->
+        <div class="space-y-4 font-mono text-xs">
+          <!-- Gear Drop Chance -->
           <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
             <div class="flex items-center justify-between">
-              <span class="font-semibold text-slate-300">Tier 0 (Level 0-9) Multiplier</span>
+              <span class="font-semibold text-slate-300">Gear Drop Chance</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="probGearInput" min="0" max="100" value="40" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">%</span>
+              </div>
+            </div>
+            <input type="range" id="probGearSlider" min="0" max="100" value="40" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+          <!-- Schematic Drop Chance -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Schematic Drop Chance</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="probSchemInput" min="0" max="100" value="80" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">%</span>
+              </div>
+            </div>
+            <input type="range" id="probSchemSlider" min="0" max="100" value="80" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+          <!-- Crafted Component Drop Chance -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Crafted Component Drop Chance</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="probCraftInput" min="0" max="100" value="100" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">%</span>
+              </div>
+            </div>
+            <input type="range" id="probCraftSlider" min="0" max="100" value="100" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+          <!-- Raw Resource Drop Chance -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Raw Resource Drop Chance</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="probRawInput" min="0" max="100" value="100" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <span class="text-[10px] text-slate-500 font-bold">%</span>
+              </div>
+            </div>
+            <input type="range" id="probRawSlider" min="0" max="100" value="100" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+          <!-- Minimum Guaranteed Items -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300">Minimum Guaranteed Items</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="minItemsInput" min="0" max="10" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+              </div>
+            </div>
+            <input type="range" id="minItemsSlider" min="0" max="10" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Playtime Multipliers per Tier -->
+      <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col mt-6">
+        <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-3 border-b border-slate-800 pb-2 flex items-center">
+          <span class="mr-2">🎁</span> Tier Scaling Configuration
+        </h2>
+        <div class="space-y-4 font-mono text-xs max-h-[600px] overflow-y-auto pr-1">
+          <!-- T0 Scaling -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 0 (Level 0-9)</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Playtime Multiplier</span>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="playtimeMultiplierT0Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
                 <span class="text-[10px] text-slate-500 font-bold">x</span>
               </div>
             </div>
-            <input type="range" id="playtimeMultiplierT0Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="playtimeMultiplierT0Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer mb-2" />
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Stack Size (Min - Max)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="t0MinInput" min="1" max="1000" value="5" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">-</span>
+                <input type="number" id="t0MaxInput" min="1" max="1000" value="10" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+              </div>
+            </div>
           </div>
 
-          <!-- T1 Multiplier -->
-          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+          <!-- T1 Scaling -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 1 (Level 10-19)</span>
+            </div>
             <div class="flex items-center justify-between">
-              <span class="font-semibold text-slate-300">Tier 1 (Level 10-19) Multiplier</span>
+              <span class="text-slate-400">Playtime Multiplier</span>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="playtimeMultiplierT1Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
                 <span class="text-[10px] text-slate-500 font-bold">x</span>
               </div>
             </div>
-            <input type="range" id="playtimeMultiplierT1Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="playtimeMultiplierT1Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer mb-2" />
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Stack Size (Min - Max)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="t1MinInput" min="1" max="1000" value="5" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">-</span>
+                <input type="number" id="t1MaxInput" min="1" max="1000" value="15" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+              </div>
+            </div>
           </div>
 
-          <!-- T2 Multiplier -->
-          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+          <!-- T2 Scaling -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 2 (Level 20-34)</span>
+            </div>
             <div class="flex items-center justify-between">
-              <span class="font-semibold text-slate-300">Tier 2 (Level 20-34) Multiplier</span>
+              <span class="text-slate-400">Playtime Multiplier</span>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="playtimeMultiplierT2Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
                 <span class="text-[10px] text-slate-500 font-bold">x</span>
               </div>
             </div>
-            <input type="range" id="playtimeMultiplierT2Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="playtimeMultiplierT2Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer mb-2" />
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Stack Size (Min - Max)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="t2MinInput" min="1" max="1000" value="10" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">-</span>
+                <input type="number" id="t2MaxInput" min="1" max="1000" value="25" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+              </div>
+            </div>
           </div>
 
-          <!-- T3 Multiplier -->
-          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+          <!-- T3 Scaling -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 3 (Level 35-49)</span>
+            </div>
             <div class="flex items-center justify-between">
-              <span class="font-semibold text-slate-300">Tier 3 (Level 35-49) Multiplier</span>
+              <span class="text-slate-400">Playtime Multiplier</span>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="playtimeMultiplierT3Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
                 <span class="text-[10px] text-slate-500 font-bold">x</span>
               </div>
             </div>
-            <input type="range" id="playtimeMultiplierT3Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="playtimeMultiplierT3Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer mb-2" />
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Stack Size (Min - Max)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="t3MinInput" min="1" max="1000" value="15" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">-</span>
+                <input type="number" id="t3MaxInput" min="1" max="1000" value="35" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+              </div>
+            </div>
           </div>
 
-          <!-- T4 Multiplier -->
-          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+          <!-- T4 Scaling -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 4 (Level 50-79)</span>
+            </div>
             <div class="flex items-center justify-between">
-              <span class="font-semibold text-slate-300">Tier 4 (Level 50-79) Multiplier</span>
+              <span class="text-slate-400">Playtime Multiplier</span>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="playtimeMultiplierT4Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
                 <span class="text-[10px] text-slate-500 font-bold">x</span>
               </div>
             </div>
-            <input type="range" id="playtimeMultiplierT4Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="playtimeMultiplierT4Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer mb-2" />
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Stack Size (Min - Max)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="t4MinInput" min="1" max="1000" value="20" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">-</span>
+                <input type="number" id="t4MaxInput" min="1" max="1000" value="50" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+              </div>
+            </div>
           </div>
 
-          <!-- T5 Multiplier -->
-          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-2">
+          <!-- T5 Scaling -->
+          <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 5 (Level 80-149)</span>
+            </div>
             <div class="flex items-center justify-between">
-              <span class="font-semibold text-slate-300">Tier 5 (Level 80-149) Multiplier</span>
+              <span class="text-slate-400">Playtime Multiplier</span>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="playtimeMultiplierT5Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
                 <span class="text-[10px] text-slate-500 font-bold">x</span>
               </div>
             </div>
-            <input type="range" id="playtimeMultiplierT5Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="playtimeMultiplierT5Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer mb-2" />
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Stack Size (Min - Max)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="t5MinInput" min="1" max="1000" value="30" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">-</span>
+                <input type="number" id="t5MaxInput" min="1" max="1000" value="75" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+              </div>
+            </div>
           </div>
 
-          <!-- T6 Multiplier -->
+          <!-- T6 Scaling -->
           <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 6 (Level 150+)</span>
+            </div>
             <div class="flex items-center justify-between">
-              <span class="font-semibold text-slate-300 text-amber-500">Tier 6 (Level 150+) Multiplier</span>
+              <span class="text-slate-400">Playtime Multiplier</span>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="playtimeMultiplierT6Input" min="1" max="100" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
                 <span class="text-[10px] text-slate-500 font-bold">x</span>
               </div>
             </div>
-            <input type="range" id="playtimeMultiplierT6Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="playtimeMultiplierT6Slider" min="1" max="50" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer mb-2" />
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">Stack Size (Min - Max)</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="t6MinInput" min="1" max="1000" value="50" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+                <span class="text-[10px] text-slate-500 font-bold">-</span>
+                <input type="number" id="t6MaxInput" min="1" max="1000" value="100" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none" />
+              </div>
+            </div>
           </div>
         </div>
       </section>
-      <!-- High-Accuracy Daemon Setup -->
+<!-- High-Accuracy Daemon Setup -->
       <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col mt-6">
         <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
           <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
@@ -381,9 +522,16 @@ docker run -d \
           <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase flex items-center">
             <span class="mr-2">🚚</span> Pending Airdrops Queue
           </h2>
-          <select id="airdropPlayerSelect" class="bg-slate-950 border border-slate-850 rounded px-2.5 py-1 text-xs font-mono text-slate-300 focus:outline-none focus:border-amber-500/50">
-            <option value="all">All Characters</option>
-          </select>
+          
+          <div class="flex items-center space-x-2">
+            <button id="clearQueueBtn" class="bg-rose-600 hover:bg-rose-500 text-slate-100 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
+              CLEAR QUEUE
+            </button>
+            <select id="airdropPlayerSelect" class="bg-slate-950 border border-slate-850 rounded px-2.5 py-1 text-xs font-mono text-slate-300 focus:outline-none focus:border-amber-500/50">
+              <option value="all">All Characters</option>
+            </select>
+          </div>
+
         </div>
         <div class="flex-1 overflow-y-auto scrollbar-thin max-h-[100px] pr-1">
           <table class="w-full text-left text-xs font-mono border-collapse">
@@ -507,6 +655,13 @@ docker run -d \
           <label class="block text-[10px] text-slate-500 uppercase mb-1">Stack Size (Quantity)</label>
           <input type="number" id="spawnItemQtyInput" value="1" min="1" class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-xs text-slate-300" />
         </div>
+
+        <div id="spawnItemWarningText" class="hidden text-rose-400 text-[10px] mt-2 mb-2 p-2 bg-rose-900/20 border border-rose-500/30 rounded leading-relaxed">
+          <span class="font-bold">WARNING:</span> An uncertain delivery state exists. The server may have already delivered this item. Check player inventories before retrying, or click below to discard the state and unlock inputs (RISK OF DUPLICATION).
+        </div>
+        <button id="spawnItemDiscardBtn" class="hidden w-full py-1.5 mb-2 bg-rose-900/40 hover:bg-rose-800 text-rose-200 text-[10px] font-bold rounded border border-rose-700 transition">
+          DISCARD UNCERTAIN DELIVERY
+        </button>
         <div class="flex space-x-3 pt-2">
           <button id="spawnItemConfirmBtn" class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded transition">
             SPAWN
@@ -543,6 +698,7 @@ docker run -d \
 
   <!-- Script tags -->
   <script src="./dune-addon-bridge.js"></script>
-  <script src="addon.js"></script>
+  <script src="grant_logic.js?v=1.3.0"></script>
+  <script src="addon.js?v=1.3.0"></script>
 </body>
 </html>

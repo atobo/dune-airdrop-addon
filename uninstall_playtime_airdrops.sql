@@ -18,7 +18,9 @@ DROP FUNCTION IF EXISTS dune.fn_manual_airdrop_spawn(BIGINT, TEXT, INT);
 
 -- 3. Remove Tables
 DROP TABLE IF EXISTS dune.airdrop_loot_tables;
-DELETE FROM dune.discord_bot_config WHERE config_key IN ('airdrop_multipliers', 'daemon_heartbeat');
+DELETE FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
+DELETE FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy';
+DELETE FROM dune.discord_bot_config WHERE config_key = 'daemon_heartbeat';
 DROP TABLE IF EXISTS dune.bot_pending_deliveries;
 DROP TABLE IF EXISTS dune.bot_active_playtime;
 

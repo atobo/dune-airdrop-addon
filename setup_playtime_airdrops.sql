@@ -83,6 +83,23 @@ VALUES
 (
   'daemon_heartbeat',
   '{"last_ping": "1970-01-01T00:00:00Z"}'::jsonb
+),
+(
+  'airdrop_economy', 
+  '{
+    "prob_gear": 0.40,
+    "prob_schem": 0.80,
+    "prob_raw": 1.0,
+    "prob_craft": 1.0,
+    "min_items": 1,
+    "tier_0_min": 5, "tier_0_max": 10,
+    "tier_1_min": 5, "tier_1_max": 15,
+    "tier_2_min": 10, "tier_2_max": 25,
+    "tier_3_min": 15, "tier_3_max": 35,
+    "tier_4_min": 20, "tier_4_max": 50,
+    "tier_5_min": 30, "tier_5_max": 75,
+    "tier_6_min": 50, "tier_6_max": 100
+  }'::jsonb
 )
 ON CONFLICT (config_key) DO NOTHING;
 
@@ -137,42 +154,82 @@ DECLARE
   v_res_qty_1 INT;
   v_res_qty_2 INT;
   v_num_rolls INT;
+  v_econ JSONB;
+  v_prob_gear NUMERIC := 0.40;
+  v_prob_schem NUMERIC := 0.80;
+  v_prob_raw NUMERIC := 1.0;
+  v_prob_craft NUMERIC := 1.0;
+  v_min_drops INT := 1;
+  v_tier_min INT := 5;
+  v_tier_max INT := 10;
+  v_granted_count INT := 0;
 BEGIN
   v_num_rolls := GREATEST(1, ROUND(p_multiplier));
 
+  SELECT config_value INTO v_econ FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy';
+  IF v_econ IS NOT NULL THEN
+    v_prob_gear := COALESCE((v_econ->>'prob_gear')::numeric, 0.40);
+    v_prob_schem := COALESCE((v_econ->>'prob_schem')::numeric, 0.80);
+    v_prob_raw := COALESCE((v_econ->>'prob_raw')::numeric, 1.0);
+    v_prob_craft := COALESCE((v_econ->>'prob_craft')::numeric, 1.0);
+    v_min_drops := COALESCE((v_econ->>'min_items')::int, 1);
+    v_tier_min := COALESCE((v_econ->>('tier_' || p_tier || '_min'))::int, 5);
+    v_tier_max := GREATEST(v_tier_min, COALESCE((v_econ->>('tier_' || p_tier || '_max'))::int, 10));
+  END IF;
+
   FOR j IN 1..v_num_rolls LOOP
+    v_granted_count := 0;
     v_gear_template := NULL;
     v_schem_template := NULL;
     v_res_template_1 := NULL;
     v_res_template_2 := NULL;
 
-    -- Roll Gear (40% chance)
-    IF RANDOM() <= 0.40 THEN
-      SELECT template_id INTO v_gear_template 
-      FROM dune.airdrop_loot_tables 
-      WHERE tier = p_tier AND category = 'gear' 
-      ORDER BY RANDOM() * weight DESC 
-      LIMIT 1;
-
-      v_gear_quality := 0;
+    -- Initial Rolls
+    IF RANDOM() <= v_prob_gear THEN
+      SELECT template_id INTO v_gear_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'gear' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      IF v_gear_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; v_gear_quality := 0; END IF;
     END IF;
 
-    -- Roll Raw Resource
-    SELECT template_id INTO v_res_template_1 
-    FROM dune.airdrop_loot_tables 
-    WHERE tier = p_tier AND category = 'raw_resources' 
-    ORDER BY RANDOM() * weight DESC 
-    LIMIT 1;
+    IF RANDOM() <= v_prob_raw THEN
+      SELECT template_id INTO v_res_template_1 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'raw_resources' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      IF v_res_template_1 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
+    END IF;
     
-    -- Roll Crafted Component
-    SELECT template_id INTO v_res_template_2 
-    FROM dune.airdrop_loot_tables 
-    WHERE tier = p_tier AND category = 'crafted_components' 
-    ORDER BY RANDOM() * weight DESC 
-    LIMIT 1;
+    IF RANDOM() <= v_prob_craft THEN
+      SELECT template_id INTO v_res_template_2 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'crafted_components' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      IF v_res_template_2 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
+    END IF;
 
-    v_res_qty_1 := GREATEST(1, (FLOOR(RANDOM() * 6) + 5)::INT);
-    v_res_qty_2 := GREATEST(1, (FLOOR(RANDOM() * 6) + 5)::INT);
+    IF RANDOM() <= v_prob_schem THEN
+      SELECT template_id INTO v_schem_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'schematics' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      IF v_schem_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
+    END IF;
+
+    -- Minimum guarantee
+    WHILE v_granted_count < v_min_drops LOOP
+      -- Pick a random missing category
+      IF v_gear_template IS NULL AND RANDOM() < 0.25 THEN
+        SELECT template_id INTO v_gear_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'gear' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        IF v_gear_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; v_gear_quality := 0; END IF;
+      ELSIF v_res_template_1 IS NULL AND RANDOM() < 0.5 THEN
+        SELECT template_id INTO v_res_template_1 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'raw_resources' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        IF v_res_template_1 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
+      ELSIF v_res_template_2 IS NULL AND RANDOM() < 0.75 THEN
+        SELECT template_id INTO v_res_template_2 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'crafted_components' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        IF v_res_template_2 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
+      ELSIF v_schem_template IS NULL THEN
+        SELECT template_id INTO v_schem_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'schematics' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        IF v_schem_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
+      END IF;
+      
+      -- Failsafe for infinite loop (e.g. no items in loot table for tier)
+      IF v_gear_template IS NOT NULL AND v_res_template_1 IS NOT NULL AND v_res_template_2 IS NOT NULL AND v_schem_template IS NOT NULL THEN
+        EXIT;
+      END IF;
+    END LOOP;
+
+    v_res_qty_1 := GREATEST(1, (FLOOR(RANDOM() * (v_tier_max - v_tier_min + 1)) + v_tier_min)::INT);
+    v_res_qty_2 := GREATEST(1, (FLOOR(RANDOM() * (v_tier_max - v_tier_min + 1)) + v_tier_min)::INT);
 
     -- Increase basic raw materials and ingots by 10x
     IF v_res_template_1 ILIKE '%ore%' OR v_res_template_1 ILIKE '%ingot%' OR v_res_template_1 ILIKE '%sand%' THEN
@@ -180,15 +237,6 @@ BEGIN
     END IF;
     IF v_res_template_2 ILIKE '%ore%' OR v_res_template_2 ILIKE '%ingot%' OR v_res_template_2 ILIKE '%sand%' THEN
       v_res_qty_2 := v_res_qty_2 * 10;
-    END IF;
-
-    -- Roll Schematic (80% chance)
-    IF RANDOM() <= 0.80 THEN
-      SELECT template_id INTO v_schem_template 
-      FROM dune.airdrop_loot_tables 
-      WHERE tier = p_tier AND category = 'schematics' 
-      ORDER BY RANDOM() * weight DESC 
-      LIMIT 1;
     END IF;
 
     -- Queue items

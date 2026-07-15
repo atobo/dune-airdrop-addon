@@ -39,8 +39,28 @@ let pendingAirdropsData = [];
 const isSandboxMode = window.parent === window;
 
 // --- Initialize Bridge & UI ---
+
 document.addEventListener('DOMContentLoaded', async () => {
   setupMultipliersSync();
+  
+  const clearQueueBtn = document.getElementById('clearQueueBtn');
+  if (clearQueueBtn) {
+    clearQueueBtn.addEventListener('click', async () => {
+      if (isSandboxMode) {
+        showToast('Mock: Queue cleared!', 'success');
+        return;
+      }
+      try {
+        await window.DuneAddon.request("database.execute", {
+          query: 'DELETE FROM dune.bot_pending_deliveries'
+        });
+        showToast('Pending airdrop queue cleared!', 'success');
+        fetchPendingAirdrops();
+      } catch (err) {
+        showToast(`Failed to clear queue: ${err.message}`, 'error');
+      }
+    });
+  }
   
   if (isSandboxMode) {
     connectionStatusBadge.textContent = 'Bridge Sandbox';
@@ -85,6 +105,14 @@ function setupMultipliersSync() {
   syncRangeAndNumber(document.getElementById('weeklyDaysRequiredSlider'), document.getElementById('weeklyDaysRequiredInput'), 1, 7, 1);
   syncRangeAndNumber(document.getElementById('weeklyMultiplierSlider'), document.getElementById('weeklyMultiplierInput'), 1, 100, 0.5);
 
+
+  // Sync Economy Sliders
+  syncRangeAndNumber(document.getElementById('probGearSlider'), document.getElementById('probGearInput'), 0, 100, 1);
+  syncRangeAndNumber(document.getElementById('probSchemSlider'), document.getElementById('probSchemInput'), 0, 100, 1);
+  syncRangeAndNumber(document.getElementById('probCraftSlider'), document.getElementById('probCraftInput'), 0, 100, 1);
+  syncRangeAndNumber(document.getElementById('probRawSlider'), document.getElementById('probRawInput'), 0, 100, 1);
+  syncRangeAndNumber(document.getElementById('minItemsSlider'), document.getElementById('minItemsInput'), 0, 10, 1);
+
   // Sync Tier Multipliers
   for (let t = 0; t <= 6; t++) {
     const slider = document.getElementById(`playtimeMultiplierT${t}Slider`);
@@ -95,9 +123,57 @@ function setupMultipliersSync() {
 
 // --- Spawn Modal Logic ---
 function setupSpawnModal() {
+  const discardBtn = document.getElementById('spawnItemDiscardBtn');
+  const warningText = document.getElementById('spawnItemWarningText');
+
+  function updateUncertainStateUI(isUncertain) {
+    if (isUncertain) {
+      spawnItemTemplateInput.disabled = true;
+      spawnItemQtyInput.disabled = true;
+      if (discardBtn) discardBtn.classList.remove('hidden');
+      if (warningText) warningText.classList.remove('hidden');
+    } else {
+      spawnItemTemplateInput.disabled = false;
+      spawnItemQtyInput.disabled = false;
+      if (discardBtn) discardBtn.classList.add('hidden');
+      if (warningText) warningText.classList.add('hidden');
+    }
+  }
+
+  function handleStateCheck() {
+    const currentState = getStoredGrantState(window.localStorage);
+    if (currentState && currentState.status === 'UNCERTAIN') {
+      // Lock inputs to the stored payload
+      spawnItemTemplateInput.value = currentState.payload.itemId;
+      spawnItemQtyInput.value = currentState.payload.quantity;
+      spawnItemTemplateInput.dataset.actId = activeContainerId; // We don't have the original actId, but we know it's locked.
+      updateUncertainStateUI(true);
+    } else {
+      updateUncertainStateUI(false);
+    }
+  }
+
+  if (discardBtn) {
+    discardBtn.addEventListener('click', () => {
+      clearStoredGrantState(window.localStorage);
+      updateUncertainStateUI(false);
+      showToast('Uncertain delivery state discarded.', 'success');
+    });
+  }
+
   spawnItemCancelBtn.addEventListener('click', () => {
     spawnItemModal.classList.add('hidden');
+    // We do NOT clear the state here if it was in flight or uncertain!
+    // The pure functions handle state clearing.
   });
+
+  // Original hook to open modal
+  const originalSelectContainer = window.selectContainer;
+  window.selectContainer = async function(id) {
+    if (originalSelectContainer) await originalSelectContainer(id);
+    spawnItemTemplateInput.dataset.actId = id;
+    handleStateCheck();
+  };
 
   spawnItemConfirmBtn.addEventListener('click', async () => {
     const templateId = spawnItemTemplateInput.value.trim();
@@ -115,31 +191,83 @@ function setupSpawnModal() {
     }
 
     try {
-      const actId = Number(activeContainerId);
+      const actId = String(spawnItemTemplateInput.dataset.actId || activeContainerId);
+      if (!/^[0-9]+$/.test(actId)) {
+        throw new Error("Invalid container ID format");
+      }
       const qNum = Number(qty);
-      if (isNaN(actId) || isNaN(qNum) || qNum <= 0) {
+      if (isNaN(qNum) || qNum <= 0) {
         throw new Error("Invalid parameters");
       }
-      // Extremely strict template ID validation: alphanumeric and underscores only
-      if (!/^[a-zA-Z0-9_]+$/.test(templateId)) {
-        throw new Error("Invalid item template ID");
-      }
       
-      await window.DuneAddon.request("database.execute", {
-        query: `SELECT dune.fn_manual_airdrop_spawn(${actId}, '${templateId}', ${qNum})`
+      spawnItemConfirmBtn.disabled = true;
+      spawnItemConfirmBtn.textContent = 'SPAWNING...';
+
+      // Resolve actId to FLS account_id securely with bigint cast
+      const res = await window.DuneAddon.request("database.query", {
+        query: `SELECT account_id FROM dune.inventories WHERE id = ${actId}::bigint LIMIT 1`
       });
-      showToast(`Successfully spawned ${qNum}x ${templateId}`, 'success');
-      await selectContainer(activeContainerId);
-      spawnItemModal.classList.add('hidden');
+      const account_id = (res.rows && res.rows[0] && res.rows[0].account_id) ? String(res.rows[0].account_id) : null;
+
+      if (!account_id) {
+        throw new Error("Could not resolve player account.");
+      }
+
+      const newPayload = {
+        playerId: account_id,
+        itemId: templateId,
+        quantity: qNum,
+        quality: 0
+      };
+
+      const currentState = getStoredGrantState(window.localStorage);
+      const stateDecision = determineActionAndState(currentState, newPayload, window.crypto);
+
+      if (stateDecision.action === 'REJECT_UNCERTAIN') {
+        showToast('A previous delivery is in an uncertain state. You must retry it or discard it first.', 'error');
+        spawnItemConfirmBtn.disabled = false;
+        spawnItemConfirmBtn.textContent = 'SPAWN';
+        return;
+      }
+
+      // Persist pending/uncertain state before calling bridge
+      setStoredGrantState(stateDecision.newState, window.localStorage);
+
+      const payload = {
+        ...stateDecision.newState.payload,
+        requestId: stateDecision.newState.id
+      };
+
+      const receipt = await window.DuneAddon.request("admin.items.grant", payload);
+
+      const outcome = handleBridgeReceipt(receipt, stateDecision.newState, window.localStorage);
+      
+      if (outcome.success) {
+        showToast(`Successfully spawned ${qNum}x ${templateId}`, 'success');
+        updateUncertainStateUI(false);
+        await selectContainer(actId);
+        spawnItemModal.classList.add('hidden');
+      } else {
+        throw new Error(outcome.message);
+      }
     } catch (err) {
-      showToast(`Failed to spawn item: ${err.message}`, 'error');
+      if (err.message && err.message.toLowerCase().includes('unsupported action')) {
+        showToast('Manual native grants require Dune Docker Console v1.3.57 or newer.', 'error');
+        handlePermanentRejection(null, window.localStorage); // Clean up state since it's a permanent rejection
+      } else {
+        showToast(`Failed to spawn item: ${err.message}`, 'error');
+        handleStateCheck(); // update UI to reflect potential uncertain lock
+      }
+    } finally {
+      spawnItemConfirmBtn.disabled = false;
+      spawnItemConfirmBtn.textContent = 'SPAWN';
     }
   });
 
-  // Populate datalist of common items
   const commonItems = ['ScrapMetal', 'CopperOre', 'IronOre', 'FlourSand', 'PlantFiber', 'Basalt', 'DolomiteRock', 'Silicone', 'WaterCanister', 'SpiceMelange'];
   validItemTemplates.innerHTML = commonItems.map(item => `<option value="${item}"></option>`).join('');
 }
+
 
 // --- Database Operations ---
 async function loadSettings() {
@@ -193,6 +321,44 @@ async function loadSettings() {
     document.getElementById('weeklyMultiplierInput').value = mults.weekly_multiplier !== undefined ? mults.weekly_multiplier : 5.0;
     document.getElementById('weeklyMultiplierSlider').value = mults.weekly_multiplier !== undefined ? mults.weekly_multiplier : 5.0;
 
+
+    const rawResEcon = await window.DuneAddon.request("database.query", {
+      query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy' LIMIT 1"
+    });
+    const resEcon = rawResEcon.rows || rawResEcon || [];
+    let econ = {
+      prob_gear: 0.40, prob_schem: 0.80, prob_raw: 1.0, prob_craft: 1.0, min_items: 1,
+      tier_0_min: 5, tier_0_max: 10,
+      tier_1_min: 5, tier_1_max: 15,
+      tier_2_min: 10, tier_2_max: 25,
+      tier_3_min: 15, tier_3_max: 35,
+      tier_4_min: 20, tier_4_max: 50,
+      tier_5_min: 30, tier_5_max: 75,
+      tier_6_min: 50, tier_6_max: 100
+    };
+    if (resEcon && resEcon.length > 0 && resEcon[0].config_value) {
+      econ = { ...econ, ...resEcon[0].config_value };
+    }
+
+    // Load Economy inputs
+    document.getElementById('probGearInput').value = Math.round(econ.prob_gear * 100);
+    document.getElementById('probGearSlider').value = Math.round(econ.prob_gear * 100);
+    document.getElementById('probSchemInput').value = Math.round(econ.prob_schem * 100);
+    document.getElementById('probSchemSlider').value = Math.round(econ.prob_schem * 100);
+    document.getElementById('probCraftInput').value = Math.round(econ.prob_craft * 100);
+    document.getElementById('probCraftSlider').value = Math.round(econ.prob_craft * 100);
+    document.getElementById('probRawInput').value = Math.round(econ.prob_raw * 100);
+    document.getElementById('probRawSlider').value = Math.round(econ.prob_raw * 100);
+    document.getElementById('minItemsInput').value = econ.min_items;
+    document.getElementById('minItemsSlider').value = econ.min_items;
+
+    for (let t = 0; t <= 6; t++) {
+      const minInput = document.getElementById(`t${t}MinInput`);
+      const maxInput = document.getElementById(`t${t}MaxInput`);
+      if (minInput) minInput.value = econ[`tier_${t}_min`] || 1;
+      if (maxInput) maxInput.value = econ[`tier_${t}_max`] || 1;
+    }
+
     for (let t = 0; t <= 6; t++) {
       const input = document.getElementById(`playtimeMultiplierT${t}Input`);
       const slider = document.getElementById(`playtimeMultiplierT${t}Slider`);
@@ -229,7 +395,7 @@ async function handleSaveAllSettings() {
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
       weekly_days_required: getInt(document.getElementById('weeklyDaysRequiredInput').value, 5),
       weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0),
-      daemon_enabled: document.getElementById('daemonEnabledToggle').checked
+      daemon_enabled: document.getElementById('daemonEnabledToggle') ? document.getElementById('daemonEnabledToggle').checked : false
     };
 
     for (let t = 0; t <= 6; t++) {
@@ -237,6 +403,27 @@ async function handleSaveAllSettings() {
       payload[`playtime_multiplier_t${t}`] = input ? getInt(input.value, 1) : 1;
     }
     payload.playtime_multiplier = payload.playtime_multiplier_t6;
+
+
+    const econPayload = {
+      prob_gear: getFloat(document.getElementById('probGearInput').value, 40) / 100,
+      prob_schem: getFloat(document.getElementById('probSchemInput').value, 80) / 100,
+      prob_craft: getFloat(document.getElementById('probCraftInput').value, 100) / 100,
+      prob_raw: getFloat(document.getElementById('probRawInput').value, 100) / 100,
+      min_items: getInt(document.getElementById('minItemsInput').value, 1),
+    };
+    for (let t = 0; t <= 6; t++) {
+      econPayload[`tier_${t}_min`] = getInt(document.getElementById(`t${t}MinInput`).value, 1);
+      econPayload[`tier_${t}_max`] = getInt(document.getElementById(`t${t}MaxInput`).value, 1);
+    }
+
+    const escapedEconJson = JSON.stringify(econPayload).replace(/'/g, "''");
+    await window.DuneAddon.request("database.execute", {
+      query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
+              VALUES ('airdrop_economy', '${escapedEconJson}'::jsonb) 
+              ON CONFLICT (config_key) 
+              DO UPDATE SET config_value = EXCLUDED.config_value`
+    });
 
     // 1. Save Airdrops Config
     const escapedJson = JSON.stringify(payload).replace(/'/g, "''");
@@ -340,7 +527,7 @@ async function fetchPendingAirdrops() {
     const rawList = await window.DuneAddon.request("database.query", {
       query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size
               FROM dune.bot_pending_deliveries bpd
-              LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
+              LEFT JOIN dune.player_state ps ON bpd.account_id::text = ps.account_id
               WHERE bpd.is_applied = false
               ORDER BY bpd.created_at DESC`
     });
