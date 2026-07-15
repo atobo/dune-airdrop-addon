@@ -418,7 +418,7 @@ async function handleSaveAllSettings() {
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
       weekly_days_required: getInt(document.getElementById('weeklyDaysRequiredInput').value, 5),
       weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0),
-      daemon_enabled: document.getElementById('daemonEnabledToggle') ? document.getElementById('daemonEnabledToggle').checked : false
+      daemon_enabled: document.getElementById('daemonEnabledToggle') ? document.getElementById('daemonEnabledToggle').checked : true
     };
 
     for (let t = 0; t <= 6; t++) {
@@ -550,7 +550,7 @@ async function fetchPendingAirdrops() {
     const rawList = await window.DuneAddon.request("database.query", {
       query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size
               FROM dune.bot_pending_deliveries bpd
-              LEFT JOIN dune.player_state ps ON bpd.account_id::text = ps.account_id
+              LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
               WHERE bpd.is_applied = false
               ORDER BY bpd.created_at DESC`
     });
@@ -569,6 +569,11 @@ async function fetchPendingAirdrops() {
     }
   } catch (err) {
     console.error('Failed to load pending queue:', err);
+    pendingAirdropsTableBody.innerHTML = `
+      <tr>
+        <td colspan="3" class="py-4 text-center italic text-rose-500">Error: ${escapeHTML(err.message || String(err))}</td>
+      </tr>
+    `;
   }
 }
 

@@ -35,7 +35,7 @@ ALTER TABLE IF EXISTS dune.bot_pending_deliveries ALTER COLUMN account_id TYPE B
 ALTER TABLE IF EXISTS dune.bot_pending_deliveries ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP WITH TIME ZONE;
 
 -- Notification function for the Node daemon
-CREATE OR REPLACE FUNCTION dune.trg_notify_pending_delivery()
+CREATE OR REPLACE FUNCTION dune.trg_notify_pending_delivery_v2()
 RETURNS trigger AS $$
 BEGIN
   PERFORM pg_notify('new_airdrop', row_to_json(NEW)::text);
@@ -47,7 +47,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_notify_airdrop ON dune.bot_pending_deliveries;
 CREATE TRIGGER trg_notify_airdrop
 AFTER INSERT ON dune.bot_pending_deliveries
-FOR EACH ROW EXECUTE FUNCTION dune.trg_notify_pending_delivery();
+FOR EACH ROW EXECUTE FUNCTION dune.trg_notify_pending_delivery_v2();
 
 -- 3. Create the addon config table
 CREATE TABLE IF NOT EXISTS dune.discord_bot_config (
@@ -104,7 +104,7 @@ VALUES
 ON CONFLICT (config_key) DO NOTHING;
 
 -- 4. Dynamic level and tier resolver
-CREATE OR REPLACE FUNCTION dune.fn_get_pawn_tier(p_pawn_id BIGINT)
+CREATE OR REPLACE FUNCTION dune.fn_get_pawn_tier_v2(p_pawn_id BIGINT)
 RETURNS INT AS $$
 DECLARE
   v_xp BIGINT := 0;
@@ -143,7 +143,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 5. Standard Item Rolling Sub-Routine
-CREATE OR REPLACE FUNCTION dune.fn_queue_reward_roll(p_account_id BIGINT, p_tier INT, p_multiplier NUMERIC, p_reason TEXT)
+CREATE OR REPLACE FUNCTION dune.fn_queue_reward_roll_v2(p_account_id BIGINT, p_tier INT, p_multiplier NUMERIC, p_reason TEXT)
 RETURNS VOID AS $$
 DECLARE
   v_gear_template TEXT;
@@ -264,14 +264,14 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 6. Playtime Reward Rolling logic wrapper
-CREATE OR REPLACE FUNCTION dune.fn_roll_playtime_reward(p_account_id BIGINT, p_pawn_id BIGINT)
+CREATE OR REPLACE FUNCTION dune.fn_roll_playtime_reward_v2(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_tier INT;
   v_config JSONB;
   v_multiplier NUMERIC := 1.0;
 BEGIN
-  v_tier := dune.fn_get_pawn_tier(p_pawn_id);
+  v_tier := dune.fn_get_pawn_tier_v2(p_pawn_id);
 
   SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
   IF v_config IS NOT NULL THEN
@@ -279,12 +279,12 @@ BEGIN
   END IF;
   IF v_multiplier < 1.0 THEN v_multiplier := 1.0; END IF;
 
-  PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_multiplier, 'playtime');
+  PERFORM dune.fn_queue_reward_roll_v2(p_account_id, v_tier, v_multiplier, 'playtime');
 END;
 $$ LANGUAGE plpgsql;
 
 -- 7. Deliver pending rewards instantly without relogs
-CREATE OR REPLACE FUNCTION dune.fn_deliver_playtime_airdrops(p_account_id BIGINT, p_pawn_id BIGINT)
+CREATE OR REPLACE FUNCTION dune.fn_deliver_playtime_airdrops_v2(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_inv_id INT;
@@ -325,7 +325,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 8. Daily and Weekly rewards check function executed on login/save
-CREATE OR REPLACE FUNCTION dune.fn_check_daily_weekly_rewards(p_account_id BIGINT, p_pawn_id BIGINT)
+CREATE OR REPLACE FUNCTION dune.fn_check_daily_weekly_rewards_v2(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_config JSONB;
@@ -360,7 +360,7 @@ BEGIN
     v_weekly_scale := COALESCE((v_config->>'weekly_multiplier')::numeric, 5.0);
   END IF;
 
-  v_tier := dune.fn_get_pawn_tier(p_pawn_id);
+  v_tier := dune.fn_get_pawn_tier_v2(p_pawn_id);
 
   -- Determine the current Coriolis Week ID and Day of Week
   -- Coriolis hits Tuesday ~05:00 UTC. We will use Tuesday 00:00 as the exact start of the week.
@@ -414,7 +414,7 @@ BEGIN
     -- Roll and Deliver Daily Reward if enabled
     IF v_daily_enabled THEN
       v_multiplier := 1.0 + ((v_streak - 1) * v_daily_step);
-      PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_multiplier, 'daily');
+      PERFORM dune.fn_queue_reward_roll_v2(p_account_id, v_tier, v_multiplier, 'daily');
     END IF;
 
     -- Process Weekly Attendance Reward (If enabled and threshold met)
@@ -432,7 +432,7 @@ BEGIN
         IF v_track.last_weekly_claimed_at IS NULL OR 
            ((EXTRACT(YEAR FROM v_track.last_weekly_claimed_at - INTERVAL '1 day')::INT * 100) + EXTRACT(WEEK FROM v_track.last_weekly_claimed_at - INTERVAL '1 day')::INT) != v_current_week_id THEN
           
-          PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_weekly_scale, 'weekly');
+          PERFORM dune.fn_queue_reward_roll_v2(p_account_id, v_tier, v_weekly_scale, 'weekly');
           
           UPDATE dune.bot_active_playtime 
           SET last_weekly_claimed_at = NOW() 
@@ -446,7 +446,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 9. Trigger handler running on player updates
-CREATE OR REPLACE FUNCTION dune.trg_track_playtime()
+CREATE OR REPLACE FUNCTION dune.trg_track_playtime_v2()
 RETURNS TRIGGER AS $$
 DECLARE
   v_delta_seconds INT;
@@ -487,7 +487,7 @@ BEGIN
     IF v_interval_min < 1 THEN v_interval_min := 60; END IF;
 
     -- Handle daily/weekly login claims instantly on online save
-    PERFORM dune.fn_check_daily_weekly_rewards(NEW.account_id, NEW.player_pawn_id);
+    PERFORM dune.fn_check_daily_weekly_rewards_v2(NEW.account_id, NEW.player_pawn_id);
 
     -- Fetch current coordinates and XP
     SELECT 
@@ -538,7 +538,7 @@ BEGIN
           -- Check if playtime threshold is achieved (and playtime airdrops are enabled)
           IF v_playtime_enabled AND v_accumulated_seconds >= (v_interval_min * 60) THEN
             -- Roll reward pack
-            PERFORM dune.fn_roll_playtime_reward(NEW.account_id, NEW.player_pawn_id);
+            PERFORM dune.fn_roll_playtime_reward_v2(NEW.account_id, NEW.player_pawn_id);
             v_accumulated_seconds := 0;
           END IF;
           
@@ -578,7 +578,7 @@ BEGIN
   -- Force direct delivery run on save to catch any lingering drops
   IF NEW.online_status::text = 'Online' THEN
     -- Native delivery disabled so Node daemon can handle instant delivery via RCON
-    -- PERFORM dune.fn_deliver_playtime_airdrops(NEW.account_id, NEW.player_pawn_id);
+    -- PERFORM dune.fn_deliver_playtime_airdrops_v2(NEW.account_id, NEW.player_pawn_id);
   END IF;
 
   RETURN NEW;
@@ -591,7 +591,7 @@ DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.encrypted_player_state;
 CREATE TRIGGER trg_player_state_playtime
 AFTER UPDATE ON dune.encrypted_player_state
 FOR EACH ROW
-EXECUTE FUNCTION dune.trg_track_playtime();
+EXECUTE FUNCTION dune.trg_track_playtime_v2();
 
 -- Initial diagnostics print
 SELECT 'Arrakis Playtime Airdrop database trigger configured successfully!' AS status;
