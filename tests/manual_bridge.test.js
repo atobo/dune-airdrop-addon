@@ -19,6 +19,14 @@ test('getStoredGrantState handles corrupt localStorage', () => {
   assert.strictEqual(state, null);
 });
 
+test('getStoredGrantState handles malformed valid JSON', () => {
+  const storage = new MockStorage();
+  storage.setItem('pending_manual_grant', JSON.stringify({ status: 'UNCERTAIN' })); // Missing payload, id, hash
+  const state = logic.getStoredGrantState(storage);
+  assert.strictEqual(state, null);
+  assert.strictEqual(storage.getItem('pending_manual_grant'), null); // Assert it was cleared
+});
+
 test('determineActionAndState: New payload generates new state', () => {
   const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
   const result = logic.determineActionAndState(null, payload, crypto);

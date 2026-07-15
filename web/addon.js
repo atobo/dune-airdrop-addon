@@ -78,6 +78,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Set up polling intervals
     setInterval(fetchDiagnostics, 5000);
     setInterval(fetchPendingAirdrops, 5000);
+    
+    // Wire up the manual spawn modal
+    setupSpawnModal();
   }
 });
 
@@ -123,6 +126,13 @@ function setupMultipliersSync() {
 
 // --- Spawn Modal Logic ---
 function setupSpawnModal() {
+  const spawnItemModal = document.getElementById('spawnItemModal');
+  const spawnItemCancelBtn = document.getElementById('spawnItemCancelBtn');
+  const spawnItemConfirmBtn = document.getElementById('spawnItemConfirmBtn');
+  const spawnItemTemplateInput = document.getElementById('spawnItemTemplateInput');
+  const spawnItemQtyInput = document.getElementById('spawnItemQtyInput');
+  const openSpawnModalBtn = document.getElementById('openSpawnModalBtn');
+  const validItemTemplates = document.getElementById('validItemTemplates');
   const discardBtn = document.getElementById('spawnItemDiscardBtn');
   const warningText = document.getElementById('spawnItemWarningText');
 
@@ -172,8 +182,15 @@ function setupSpawnModal() {
   window.selectContainer = async function(id) {
     if (originalSelectContainer) await originalSelectContainer(id);
     spawnItemTemplateInput.dataset.actId = id;
+    if (openSpawnModalBtn) openSpawnModalBtn.classList.remove('hidden');
     handleStateCheck();
   };
+
+  if (openSpawnModalBtn) {
+    openSpawnModalBtn.addEventListener('click', () => {
+      spawnItemModal.classList.remove('hidden');
+    });
+  }
 
   spawnItemConfirmBtn.addEventListener('click', async () => {
     const templateId = spawnItemTemplateInput.value.trim();
@@ -256,6 +273,12 @@ function setupSpawnModal() {
         handlePermanentRejection(null, window.localStorage); // Clean up state since it's a permanent rejection
       } else {
         showToast(`Failed to spawn item: ${err.message}`, 'error');
+        // Persist UNCERTAIN for ambiguous network errors / timeouts
+        const currentState = getStoredGrantState(window.localStorage);
+        if (currentState) {
+          currentState.status = 'UNCERTAIN';
+          setStoredGrantState(currentState, window.localStorage);
+        }
         handleStateCheck(); // update UI to reflect potential uncertain lock
       }
     } finally {

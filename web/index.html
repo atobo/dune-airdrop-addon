@@ -623,9 +623,14 @@ docker run -d \
     <div class="w-full lg:w-7/12 flex flex-col gap-6 overflow-y-auto pr-1">
       <section class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-5 neon-border flex flex-col min-h-[500px] overflow-y-auto">
         <div id="containerHeader" class="border-b border-slate-800/80 pb-4 mb-4">
-          <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase mb-1">
-            📦 Container Details
-          </h2>
+          <div class="flex justify-between items-center mb-1">
+            <h2 class="font-mono text-sm font-semibold tracking-wider text-amber-500 uppercase">
+              📦 Container Details
+            </h2>
+            <button id="openSpawnModalBtn" class="hidden px-3 py-1 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-[10px] rounded transition">
+              ➕ SPAWN ITEM
+            </button>
+          </div>
           <p class="text-xs text-slate-400 font-mono">Select a container from the list to view and manage its items.</p>
         </div>
 

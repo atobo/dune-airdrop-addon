@@ -3,8 +3,15 @@ const STORAGE_KEY = 'pending_manual_grant';
 function getStoredGrantState(storage) {
   try {
     const raw = storage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.id || !parsed.status || !parsed.payload) {
+      storage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return parsed;
   } catch (e) {
+    storage.removeItem(STORAGE_KEY);
     return null; // Corrupt local storage handled safely
   }
 }
