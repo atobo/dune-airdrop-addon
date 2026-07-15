@@ -323,8 +323,8 @@ BEGIN
   -- ISODOW returns 1 (Monday) to 7 (Sunday)
   v_day_of_week := (EXTRACT(ISODOW FROM v_today)::INT + 5) % 7;
 
-  -- Fetch player stats record
-  SELECT * INTO v_track FROM dune.bot_active_playtime WHERE character_id = p_pawn_id;
+  -- Fetch player stats record with FOR UPDATE to prevent concurrent duplicate rewards
+  SELECT * INTO v_track FROM dune.bot_active_playtime WHERE character_id = p_pawn_id FOR UPDATE;
   IF v_track.character_id IS NULL THEN
     -- Initialize if missing
     INSERT INTO dune.bot_active_playtime (character_id, last_login_date, consecutive_days, weekly_login_mask, current_week_id)
@@ -2208,3 +2208,28 @@ ON CONFLICT (tier, category, template_id) DO NOTHING;
 
 -- ==========================================
 -- [END AUTO-GENERATED LOOT POOLS]
+
+-- ==========================================
+-- [START MANUAL SPAWN HELPER]
+-- ==========================================
+CREATE OR REPLACE FUNCTION dune.fn_manual_airdrop_spawn(p_container_id BIGINT, p_template_id TEXT, p_qty INT)
+RETURNS VOID AS $$
+DECLARE
+  v_account_id BIGINT;
+BEGIN
+  IF p_qty <= 0 THEN
+    RAISE EXCEPTION 'Quantity must be greater than 0';
+  END IF;
+  IF p_template_id IS NULL OR p_template_id = '' THEN
+    RAISE EXCEPTION 'Template ID cannot be empty';
+  END IF;
+
+  SELECT account_id INTO v_account_id FROM dune.inventories WHERE id = p_container_id LIMIT 1;
+  IF v_account_id IS NULL THEN
+    RAISE EXCEPTION 'Container % not found or has no owner account', p_container_id;
+  END IF;
+
+  INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
+  VALUES (v_account_id, p_template_id, p_qty, false, 0);
+END;
+$$ LANGUAGE plpgsql;

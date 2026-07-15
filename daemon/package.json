@@ -8,6 +8,6 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "pg": "^8.11.3"
+    "pg": "^8.22.0"
   }
 }

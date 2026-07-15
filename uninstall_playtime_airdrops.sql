@@ -14,10 +14,11 @@ DROP FUNCTION IF EXISTS dune.fn_roll_playtime_reward(BIGINT, BIGINT);
 DROP FUNCTION IF EXISTS dune.fn_queue_reward_roll(BIGINT, INT, NUMERIC, TEXT);
 DROP FUNCTION IF EXISTS dune.fn_get_pawn_tier(BIGINT);
 DROP FUNCTION IF EXISTS dune.trg_notify_pending_delivery();
+DROP FUNCTION IF EXISTS dune.fn_manual_airdrop_spawn(BIGINT, TEXT, INT);
 
 -- 3. Remove Tables
 DROP TABLE IF EXISTS dune.airdrop_loot_tables;
-DROP TABLE IF EXISTS dune.discord_bot_config;
+DELETE FROM dune.discord_bot_config WHERE config_key IN ('airdrop_multipliers', 'daemon_heartbeat');
 DROP TABLE IF EXISTS dune.bot_pending_deliveries;
 DROP TABLE IF EXISTS dune.bot_active_playtime;
 

@@ -25,15 +25,20 @@ From the root of your Dune server repository, run:
 cd runtime/addons/installed/dune-airdrop-addon/daemon
 docker build -t airdrop-daemon .
 docker rm -f airdrop-daemon
+# Note: You may need to add --group-add <docker-gid> to allow the non-root container user to access the docker socket
 docker run -d \
   --name airdrop-daemon \
   --network host \
   --restart unless-stopped \
   -e DUNE_DOCKER_ROOT=/repo \
-  -v $(pwd)/../../../../..:/repo \
-  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd)/../../../../../runtime/scripts:/repo/runtime/scripts:ro \
+  -v $(pwd)/../../../../../.env:/repo/.env:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
   airdrop-daemon
 ```
+
+**Why does this require Docker socket access?**
+The current Dune Console Addon API does not support native item delivery. To automate airdrops, this companion daemon executes RCON commands (`dune admin grant-item-id`) against the running game container. We mitigate this risk by running the daemon as a non-root user and strictly mounting only the required scripts and `.env` as read-only (`:ro`).
 
 ### Update the Daemon
 If you update the addon in RedBlink, you should rebuild the daemon image:

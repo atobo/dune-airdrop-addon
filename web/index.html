@@ -325,21 +325,22 @@
           <p class="text-slate-400">
             The daemon is a <span class="text-amber-500 font-bold">REQUIRED</span> background service. It listens to the database and executes real-time RCON commands to drop items into player inventories. Use the <span class="text-emerald-500 font-bold">INIT SCHEMA</span> button above before running it for the first time.
           </p>
-          <div class="bg-slate-950 p-3 rounded border border-slate-800 text-[11px] leading-relaxed select-all overflow-x-auto whitespace-pre font-mono"># 1. Enter the Addon Daemon directory
+        <div class="bg-slate-950 p-3 rounded border border-slate-800 text-[11px] leading-relaxed select-all overflow-x-auto whitespace-pre font-mono"># 1. Enter the Addon Daemon directory
 cd runtime/addons/installed/dune-airdrop-addon/daemon/
 
 # 2. Build the Docker image
 docker build -t airdrop-daemon .
 
-# 3. Start the background container
+# 3. Start the background container (Note: You may need --group-add to allow docker socket access)
 docker rm -f airdrop-daemon
 docker run -d \
   --name airdrop-daemon \
   --network host \
   --restart unless-stopped \
   -e DUNE_DOCKER_ROOT=/repo \
-  -v $(pwd)/../../../../..:/repo \
-  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd)/../../../../../runtime/scripts:/repo/runtime/scripts:ro \
+  -v $(pwd)/../../../../../.env:/repo/.env:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
   airdrop-daemon</div>
         </div>
       </section>

@@ -115,23 +115,21 @@ function setupSpawnModal() {
     }
 
     try {
-      // Find inventory ID for the active container
-      const rawInvRes = await window.DuneAddon.request("database.query", {
-        query: "SELECT id FROM dune.inventories WHERE actor_id = $1 LIMIT 1",
-        params: [activeContainerId]
-      });
-      const invRes = rawInvRes.rows || rawInvRes || [];
-
-      if (invRes && invRes.length > 0) {
-        const invId = invRes[0].id;
-        await window.DuneAddon.request("database.execute", {
-          query: `INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-                  VALUES ((SELECT account_id FROM dune.inventories WHERE id = $1), $2, $3, false, 0)`,
-          params: [invId, templateId, qty]
-        });
-        showToast(`Successfully spawned ${qty}x ${templateId}`, 'success');
-        await selectContainer(activeContainerId);
+      const actId = Number(activeContainerId);
+      const qNum = Number(qty);
+      if (isNaN(actId) || isNaN(qNum) || qNum <= 0) {
+        throw new Error("Invalid parameters");
       }
+      // Extremely strict template ID validation: alphanumeric and underscores only
+      if (!/^[a-zA-Z0-9_]+$/.test(templateId)) {
+        throw new Error("Invalid item template ID");
+      }
+      
+      await window.DuneAddon.request("database.execute", {
+        query: `SELECT dune.fn_manual_airdrop_spawn(${actId}, '${templateId}', ${qNum})`
+      });
+      showToast(`Successfully spawned ${qNum}x ${templateId}`, 'success');
+      await selectContainer(activeContainerId);
       spawnItemModal.classList.add('hidden');
     } catch (err) {
       showToast(`Failed to spawn item: ${err.message}`, 'error');
@@ -230,7 +228,8 @@ async function handleSaveAllSettings() {
       daily_max_streak: getInt(document.getElementById('dailyMaxStreakInput').value, 7),
       weekly_enabled: document.getElementById('weeklyEnabledToggle').checked,
       weekly_days_required: getInt(document.getElementById('weeklyDaysRequiredInput').value, 5),
-      weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0)
+      weekly_multiplier: getFloat(document.getElementById('weeklyMultiplierInput').value, 5.0),
+      daemon_enabled: document.getElementById('daemonEnabledToggle').checked
     };
 
     for (let t = 0; t <= 6; t++) {
