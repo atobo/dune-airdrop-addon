@@ -333,8 +333,12 @@ docker build -t airdrop-daemon .
 
 # 3. Start the background container
 docker rm -f airdrop-daemon
-docker run -d --name airdrop-daemon --network host \
-  -v $(pwd)/../../../../runtime:/runtime \
+docker run -d \
+  --name airdrop-daemon \
+  --network host \
+  --restart unless-stopped \
+  -e DUNE_DOCKER_ROOT=/repo \
+  -v $(pwd)/../../../../..:/repo \
   -v /var/run/docker.sock:/var/run/docker.sock \
   airdrop-daemon</div>
         </div>

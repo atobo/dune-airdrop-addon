@@ -17,19 +17,52 @@ A powerful, customizable, and automated playtime tracking and rewards system for
 
 ## 2. Running the Daemon
 
-Because RedBlink addons are UI-only, the companion Node daemon must be built and run manually using Docker on your host machine:
+Because RedBlink addons are UI-only, this addon requires a **Companion-Service Setup**. The companion Node daemon must be built and run manually using Docker on your host machine so it can monitor the database and execute RCON commands.
 
+### Start the Daemon
+From the root of your Dune server repository, run:
 ```bash
 cd runtime/addons/installed/dune-airdrop-addon/daemon
 docker build -t airdrop-daemon .
 docker rm -f airdrop-daemon
-docker run -d --name airdrop-daemon --network host \
-  -v $(pwd)/../../../../runtime:/runtime \
+docker run -d \
+  --name airdrop-daemon \
+  --network host \
+  --restart unless-stopped \
+  -e DUNE_DOCKER_ROOT=/repo \
+  -v $(pwd)/../../../../..:/repo \
   -v /var/run/docker.sock:/var/run/docker.sock \
   airdrop-daemon
 ```
 
-To stop the daemon, run `docker rm -f airdrop-daemon`.
+### Update the Daemon
+If you update the addon in RedBlink, you should rebuild the daemon image:
+```bash
+cd runtime/addons/installed/dune-airdrop-addon/daemon
+docker build -t airdrop-daemon .
+docker restart airdrop-daemon
+```
+
+### View Logs
+```bash
+docker logs -f airdrop-daemon
+```
+
+### Health Check
+Verify the container is running and healthy:
+```bash
+docker ps | grep airdrop-daemon
+```
+
+### Stop the Daemon
+```bash
+docker stop airdrop-daemon
+```
+
+### Uninstall the Daemon
+```bash
+docker rm -f airdrop-daemon
+```
 
 ## Uninstallation
 

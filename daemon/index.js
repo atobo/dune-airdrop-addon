@@ -7,10 +7,10 @@ import { fileURLToPath } from 'url';
 
 const execFileAsync = promisify(execFile);
 
-// Resolve the root of the Dune Docker Console by going up from this installed addon's directory
+// Resolve the root of the Dune Docker Console by taking it from env or defaulting to /repo
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const duneDockerRoot = path.resolve(__dirname, '../../../../..');
+const duneDockerRoot = process.env.DUNE_DOCKER_ROOT || '/repo';
 
 // Automatically find the password from the server's .env file!
 let dbPassword = "dune";
