@@ -14,6 +14,7 @@ function getStoredGrantState(storage) {
     const p = parsed.payload;
     if (typeof p.playerId !== 'string' || p.playerId.trim() === '') throw new Error('Invalid playerId');
     if (typeof p.itemId !== 'string' || p.itemId.trim() === '') throw new Error('Invalid itemId');
+    if (typeof p.containerId !== 'string' || p.containerId.trim() === '') throw new Error('Invalid containerId');
     
     if (!Number.isInteger(p.quantity) || p.quantity < 1 || p.quantity > 1000) throw new Error('Invalid quantity');
     if (!Number.isInteger(p.quality) || p.quality < 0 || p.quality > 5) throw new Error('Invalid quality');
@@ -37,7 +38,7 @@ function clearStoredGrantState(storage) {
 }
 
 function computePayloadHash(payload) {
-  return `${payload.playerId}:${payload.itemId}:${payload.quantity}:${payload.quality}`;
+  return `${payload.playerId}:${payload.itemId}:${payload.quantity}:${payload.quality}:${payload.containerId}`;
 }
 
 function determineActionAndState(currentState, newPayload, cryptoObj) {

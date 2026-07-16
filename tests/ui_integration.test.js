@@ -13,8 +13,12 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
   const addonSrc = fs.readFileSync(path.resolve(__dirname, '../web/addon.js'), 'utf-8');
 
+  // Combine HTML and Scripts
+  const addonSrcModified = addonSrc.replace('const isSandboxMode = window.parent === window;', 'const isSandboxMode = false;');
+  const combinedHtml = html.replace('</body>', `<script>${grantLogicSrc}</script><script>${addonSrcModified}</script></body>`);
+
   // Setup DOM
-  const dom = new JSDOM(html, { runScripts: "dangerously", url: "http://localhost/" });
+  const dom = new JSDOM(combinedHtml, { runScripts: "dangerously", url: "http://localhost/" });
   const window = dom.window;
   const document = window.document;
 
@@ -27,18 +31,21 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
     removeItem: (k) => delete mockStorage[k]
   };
 
-  // Mock the bridge
   let queriesReceived = [];
-  let bridgeResponses = [];
-  
   window.DuneAddon = {
     request: async (action, payload) => {
       queriesReceived.push({ action, payload });
-      if (bridgeResponses.length > 0) {
-        return bridgeResponses.shift()();
-      }
       if (action === 'database.query') {
+        if (payload.query.includes('ILIKE \'%container%\'')) {
+          return { rows: [{ id: '9999999999999', class: '/Game/Chest', owner_account_id: '12345' }] };
+        }
+        if (payload.query.includes('FROM dune.inventories WHERE id =')) {
+          return { rows: [{ account_id: '12345' }] };
+        }
         return { rows: [] };
+      }
+      if (action === 'admin.items.grant') {
+        return { ok: true };
       }
       return { ok: true };
     }
@@ -46,19 +53,6 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
 
   // Mock fetch
   window.fetch = async () => ({ ok: true, text: async () => 'mock_sql' });
-
-  // Execute scripts in the DOM context
-  const grantScript = document.createElement('script');
-  grantScript.textContent = grantLogicSrc;
-  document.body.appendChild(grantScript);
-
-  const addonSrcModified = addonSrc.replace('const isSandboxMode = window.parent === window;', 'const isSandboxMode = false;');
-  const addonScript = document.createElement('script');
-  addonScript.textContent = addonSrcModified;
-  document.body.appendChild(addonScript);
-
-  // Trigger DOMContentLoaded
-  document.dispatchEvent(new window.Event('DOMContentLoaded'));
 
   // Allow microtasks to process
   await new Promise(r => setTimeout(r, 50));
@@ -70,13 +64,10 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   // Clear queries from init phase
   queriesReceived = [];
 
-  // Setup a mock response for fetchContainers if called again
-  bridgeResponses.push(() => ({
-    rows: [{ id: '9999999999999', class: '/Game/Chest', owner_account_id: '12345' }]
-  }));
-
   // 2. Select Container via UI interaction
-  await window.selectContainer('9999999999999');
+  const containerRow = document.getElementById('container-row-9999999999999');
+  assert.ok(containerRow, 'Container row should exist');
+  containerRow.click();
   
   // Modal should be enabled and actId dataset set
   const openSpawnModalBtn = document.getElementById('openSpawnModalBtn');
@@ -95,12 +86,6 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   const spawnItemQtyInput = document.getElementById('spawnItemQtyInput');
   spawnItemQtyInput.value = '3';
   
-  // Set up the ownership query response
-  bridgeResponses.push(() => ({ rows: [{ account_id: '12345' }] }));
-  
-  // Set up the actual grant response
-  bridgeResponses.push(() => ({ ok: true }));
-
   const confirmBtn = document.getElementById('spawnItemConfirmBtn');
   confirmBtn.click();
   
@@ -115,4 +100,8 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   
   // Validate UI is closed
   assert.ok(modal.classList.contains('hidden'));
+
+  // Cleanup polling intervals to prevent tests from hanging
+  if (window.__fetchDiagnosticsInterval) clearInterval(window.__fetchDiagnosticsInterval);
+  if (window.__fetchPendingInterval) clearInterval(window.__fetchPendingInterval);
 });

@@ -78,8 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await fetchContainers();
     
     // Set up polling intervals
-    setInterval(fetchDiagnostics, 5000);
-    setInterval(fetchPendingAirdrops, 5000);
+    window.__fetchDiagnosticsInterval = setInterval(fetchDiagnostics, 5000);
+    window.__fetchPendingInterval = setInterval(fetchPendingAirdrops, 5000);
     
     // Wire up the manual spawn modal
     setupSpawnModal();
@@ -168,7 +168,8 @@ function setupSpawnModal() {
       // Lock inputs to the stored payload
       spawnItemTemplateInput.value = currentState.payload.itemId;
       spawnItemQtyInput.value = currentState.payload.quantity;
-      spawnItemTemplateInput.dataset.actId = activeContainerId; // We don't have the original actId, but we know it's locked.
+      spawnItemTemplateInput.dataset.actId = currentState.payload.containerId;
+      window.selectContainer(currentState.payload.containerId);
       updateUncertainStateUI(true);
     } else {
       updateUncertainStateUI(false);
@@ -234,9 +235,15 @@ function setupSpawnModal() {
       return;
     }
 
+    // Disable submission immediately to prevent duplicate rapid clicks
+    spawnItemConfirmBtn.disabled = true;
+    spawnItemConfirmBtn.textContent = 'SPAWNING...';
+
     if (isSandboxMode) {
       showToast(`Mock: Spawned ${qty}x ${templateId}`, 'success');
       spawnItemModal.classList.add('hidden');
+      spawnItemConfirmBtn.disabled = false;
+      spawnItemConfirmBtn.textContent = 'SPAWN';
       return;
     }
 
@@ -249,9 +256,6 @@ function setupSpawnModal() {
       if (isNaN(qNum) || qNum <= 0) {
         throw new Error("Invalid parameters");
       }
-      
-      spawnItemConfirmBtn.disabled = true;
-      spawnItemConfirmBtn.textContent = 'SPAWNING...';
 
       // Resolve actId to FLS account_id securely with bigint cast
       const res = await window.DuneAddon.request("database.query", {
@@ -268,7 +272,8 @@ function setupSpawnModal() {
         playerId: account_id,
         itemId: templateId,
         quantity: qNum,
-        quality: 0
+        quality: 0,
+        containerId: actId
       };
 
       const currentState = getStoredGrantState(window.localStorage);
@@ -304,8 +309,9 @@ function setupSpawnModal() {
         throw new Error(outcome.message);
       }
     } catch (err) {
-      if (err.message && err.message.toLowerCase().includes('unsupported action')) {
-        showToast('Manual native grants require Dune Docker Console v1.3.57 or newer.', 'error');
+      const errMsg = (err.message || '').toLowerCase();
+      if (errMsg.includes('unsupported action') || errMsg.includes('permission') || errMsg.includes('not approved')) {
+        showToast(`Permission denied or unsupported: ${err.message}`, 'error');
         handlePermanentRejection(null, window.localStorage); // Clean up state since it's a permanent rejection
       } else {
         showToast(`Failed to spawn item: ${err.message}`, 'error');
