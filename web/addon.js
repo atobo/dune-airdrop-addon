@@ -75,10 +75,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadSettings();
     await fetchDiagnostics();
     await fetchPendingAirdrops();
+    await fetchContainers();
     
     // Set up polling intervals
     window.__fetchDiagnosticsInterval = setInterval(fetchDiagnostics, 5000);
     window.__fetchPendingInterval = setInterval(fetchPendingAirdrops, 5000);
+    
+    // Wire up the manual spawn modal
+    setupSpawnModal();
+    
+    // Wire up tabs if they exist
+    const settingsTab = document.getElementById('tabSettingsBtn');
+    const settingsView = document.getElementById('settingsView');
+    const lootView = document.getElementById('lootView');
+    
+    // Add tab for loot if missing, or just show loot view below settings
+    // if (lootView) {
+    //   lootView.classList.remove('hidden');
+    // }
   }
 });
 
@@ -123,6 +137,210 @@ function setupMultipliersSync() {
 }
 
 // --- Spawn Modal Logic ---
+function setupSpawnModal() {
+  const spawnItemModal = document.getElementById('spawnItemModal');
+  const spawnItemCancelBtn = document.getElementById('spawnItemCancelBtn');
+  const spawnItemConfirmBtn = document.getElementById('spawnItemConfirmBtn');
+  const spawnItemTemplateInput = document.getElementById('spawnItemTemplateInput');
+  const spawnItemQtyInput = document.getElementById('spawnItemQtyInput');
+  const openSpawnModalBtn = document.getElementById('openSpawnModalBtn');
+  const validItemTemplates = document.getElementById('validItemTemplates');
+  const discardBtn = document.getElementById('spawnItemDiscardBtn');
+  const warningText = document.getElementById('spawnItemWarningText');
+
+  function updateUncertainStateUI(isUncertain) {
+    if (isUncertain) {
+      spawnItemTemplateInput.disabled = true;
+      spawnItemQtyInput.disabled = true;
+      if (discardBtn) discardBtn.classList.remove('hidden');
+      if (warningText) warningText.classList.remove('hidden');
+    } else {
+      spawnItemTemplateInput.disabled = false;
+      spawnItemQtyInput.disabled = false;
+      if (discardBtn) discardBtn.classList.add('hidden');
+      if (warningText) warningText.classList.add('hidden');
+    }
+  }
+
+  function handleStateCheck() {
+    const currentState = getStoredGrantState(window.localStorage);
+    if (currentState) {
+      // Lock inputs to the stored payload
+      spawnItemTemplateInput.value = currentState.payload.itemId;
+      spawnItemQtyInput.value = currentState.payload.quantity;
+      spawnItemTemplateInput.dataset.actId = currentState.payload.containerId;
+      if (activeContainerId !== currentState.payload.containerId) {
+        window.selectContainer(currentState.payload.containerId, true);
+      }
+      updateUncertainStateUI(true);
+    } else {
+      updateUncertainStateUI(false);
+    }
+  }
+
+  if (discardBtn) {
+    discardBtn.addEventListener('click', () => {
+      clearStoredGrantState(window.localStorage);
+      updateUncertainStateUI(false);
+      showToast('Uncertain delivery state discarded.', 'success');
+    });
+  }
+
+  spawnItemCancelBtn.addEventListener('click', () => {
+    spawnItemModal.classList.add('hidden');
+    // We do NOT clear the state here if it was in flight or uncertain!
+    // The pure functions handle state clearing.
+  });
+
+  // Global selectContainer implementation
+  window.selectContainer = async function(id, skipStateCheck = false) {
+    if (!/^[0-9]+$/.test(String(id))) {
+      showToast('Invalid container ID selected.', 'error');
+      return;
+    }
+    activeContainerId = String(id);
+    spawnItemTemplateInput.dataset.actId = activeContainerId;
+    
+    // Update UI highlights
+    const rows = document.querySelectorAll('.container-row');
+    rows.forEach(r => r.classList.remove('bg-amber-900/30', 'border-amber-500/50'));
+    const selectedRow = document.getElementById(`container-row-${id}`);
+    if (selectedRow) {
+      selectedRow.classList.add('bg-amber-900/30', 'border-amber-500/50');
+    }
+    
+    if (openSpawnModalBtn) openSpawnModalBtn.classList.remove('hidden');
+    
+    // Clear container grid to show it is selected
+    const grid = document.getElementById('containerInventoryGrid');
+    if (grid) {
+      grid.innerHTML = `<div class="col-span-full py-12 text-center text-slate-500 font-mono italic">
+        Container ${escapeHTML(id)} selected. Ready to spawn items.
+      </div>`;
+    }
+
+    if (!skipStateCheck) {
+      handleStateCheck();
+    }
+  };
+
+  if (openSpawnModalBtn) {
+    openSpawnModalBtn.addEventListener('click', () => {
+      spawnItemModal.classList.remove('hidden');
+    });
+  }
+
+  spawnItemConfirmBtn.addEventListener('click', async () => {
+    const templateId = spawnItemTemplateInput.value.trim();
+    const qty = parseInt(spawnItemQtyInput.value) || 1;
+    
+    if (!templateId) {
+      showToast('Please enter an item template ID.', 'error');
+      return;
+    }
+
+    // Disable submission immediately to prevent duplicate rapid clicks
+    spawnItemConfirmBtn.disabled = true;
+    spawnItemConfirmBtn.textContent = 'SPAWNING...';
+
+    if (isSandboxMode) {
+      showToast(`Mock: Spawned ${qty}x ${templateId}`, 'success');
+      spawnItemModal.classList.add('hidden');
+      spawnItemConfirmBtn.disabled = false;
+      spawnItemConfirmBtn.textContent = 'SPAWN';
+      return;
+    }
+
+    try {
+      const actId = String(spawnItemTemplateInput.dataset.actId || activeContainerId);
+      if (!/^[0-9]+$/.test(actId)) {
+        throw new Error("Invalid container ID format");
+      }
+      const qNum = Number(qty);
+      if (isNaN(qNum) || qNum <= 0) {
+        throw new Error("Invalid parameters");
+      }
+
+      // Resolve actId to FLS account_id securely with bigint cast
+      const res = await window.DuneAddon.request("database.query", {
+        query: `SELECT account_id FROM dune.inventories WHERE id = ${actId}::bigint LIMIT 1`
+      });
+      
+      const account_id = (res.rows && res.rows.length === 1 && res.rows[0] && res.rows[0].account_id) ? String(res.rows[0].account_id) : null;
+
+      if (!account_id || account_id.trim() === '') {
+        throw new Error("Could not resolve exactly one nonempty player account.");
+      }
+
+      const newPayload = {
+        playerId: account_id,
+        itemId: templateId,
+        quantity: qNum,
+        quality: 0,
+        containerId: actId
+      };
+
+      const currentState = getStoredGrantState(window.localStorage);
+      const stateDecision = determineActionAndState(currentState, newPayload, window.crypto);
+
+      if (stateDecision.action === 'REJECT_UNCERTAIN') {
+        showToast('A previous delivery is in an uncertain state. You must retry it or discard it first.', 'error');
+        spawnItemConfirmBtn.disabled = false;
+        spawnItemConfirmBtn.textContent = 'SPAWN';
+        return;
+      }
+
+      // Persist pending/uncertain state before calling bridge
+      setStoredGrantState(stateDecision.newState, window.localStorage);
+
+      const payload = {
+        ...stateDecision.newState.payload,
+        requestId: stateDecision.newState.id
+      };
+
+      const receipt = await window.DuneAddon.request("admin.items.grant", payload);
+
+      const outcome = handleBridgeReceipt(receipt, stateDecision.newState, window.localStorage);
+      
+      if (outcome.success) {
+        showToast(`Successfully spawned ${qNum}x ${templateId}`, 'success');
+        updateUncertainStateUI(false);
+        if (window.selectContainer) {
+          await window.selectContainer(actId);
+        }
+        spawnItemModal.classList.add('hidden');
+      } else {
+        throw new Error(outcome.message);
+      }
+    } catch (err) {
+      const errMsg = (err.message || '').toLowerCase();
+      if (errMsg.includes('unsupported action') || errMsg.includes('permission') || errMsg.includes('not approved')) {
+        showToast(`Permission denied or unsupported: ${err.message}`, 'error');
+        handlePermanentRejection(null, window.localStorage); // Clean up state since it's a permanent rejection
+      } else {
+        showToast(`Failed to spawn item: ${err.message}`, 'error');
+        // Persist UNCERTAIN for ambiguous network errors / timeouts
+        const currentState = getStoredGrantState(window.localStorage);
+        if (currentState) {
+          currentState.status = 'UNCERTAIN';
+          setStoredGrantState(currentState, window.localStorage);
+        }
+        handleStateCheck(); // update UI to reflect potential uncertain lock
+      }
+    } finally {
+      spawnItemConfirmBtn.disabled = false;
+      spawnItemConfirmBtn.textContent = 'SPAWN';
+    }
+  });
+
+  const commonItems = ['ScrapMetal', 'CopperOre', 'IronOre', 'FlourSand', 'PlantFiber', 'Basalt', 'DolomiteRock', 'Silicone', 'WaterCanister', 'SpiceMelange'];
+  validItemTemplates.innerHTML = commonItems.map(item => `<option value="${item}"></option>`).join('');
+  
+  handleStateCheck();
+}
+
+
+// --- Database Operations ---
 async function loadSettings() {
   try {
     const rawRes = await window.DuneAddon.request("database.query", {
@@ -431,6 +649,53 @@ function renderPendingAirdrops() {
   `).join('');
 }
 
+async function fetchContainers() {
+  if (isSandboxMode) return;
+  const tableBody = document.getElementById('lootContainersTableBody');
+  if (!tableBody) return;
+
+  try {
+    const rawList = await window.DuneAddon.request("database.query", {
+      query: `
+        SELECT 
+          i.id::text as id,
+          a.class,
+          a.owner_account_id
+        FROM dune.inventories i
+        JOIN dune.actors a ON i.actor_id = a.id
+        WHERE a.class ILIKE '%container%' OR a.class ILIKE '%chest%'
+        LIMIT 100
+      `
+    });
+    
+    const containers = rawList.rows || rawList || [];
+    
+    if (containers.length === 0) {
+      tableBody.innerHTML = `<tr><td colspan="4" class="py-4 text-center italic text-slate-500">No containers found.</td></tr>`;
+      return;
+    }
+    
+    tableBody.innerHTML = containers.map(c => {
+      const cls = c.class ? c.class.split('/').pop().replace('_C', '') : 'Unknown';
+      const isSelected = activeContainerId === c.id;
+      const highlight = isSelected ? 'bg-amber-900/30 border-amber-500/50' : '';
+      return `
+        <tr id="container-row-${escapeHTML(c.id)}" class="container-row border-b border-slate-900/40 hover:bg-slate-900/20 font-mono text-xs cursor-pointer ${highlight}" onclick="window.selectContainer('${escapeHTML(c.id)}')">
+          <td class="py-2 text-slate-400 font-bold">${escapeHTML(c.id)}</td>
+          <td class="py-2 text-amber-500">${escapeHTML(cls)}</td>
+          <td class="py-2 text-slate-300">${escapeHTML(c.owner_account_id || 'Unknown')}</td>
+          <td class="py-2 text-center text-slate-500">-</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Failed to load containers:', err);
+    tableBody.innerHTML = `<tr><td colspan="4" class="py-4 text-center italic text-rose-500">Error: ${escapeHTML(err.message)}</td></tr>`;
+  }
+}
+
+
+// --- UI Toasts ---
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
