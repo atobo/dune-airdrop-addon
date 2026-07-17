@@ -1,5 +1,5 @@
 import zipfile, os
-with zipfile.ZipFile('/home/atobo/dune-docker-addons/dune-airdrop-addon-1.3.2.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
+with zipfile.ZipFile('/home/atobo/dune-docker-addons/dune-airdrop-addon-1.3.3.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
     for root, dirs, files in os.walk('.'):
         if '.git' in root or 'node_modules' in root or '__pycache__' in root:
             continue
