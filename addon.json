@@ -12,6 +12,7 @@
   },
   "permissions": [
     "database:read",
-    "database:write"
+    "database:write",
+    "admin:grant-items"
   ]
 }

@@ -164,12 +164,14 @@ function setupSpawnModal() {
 
   function handleStateCheck() {
     const currentState = getStoredGrantState(window.localStorage);
-    if (currentState && currentState.status === 'UNCERTAIN') {
+    if (currentState) {
       // Lock inputs to the stored payload
       spawnItemTemplateInput.value = currentState.payload.itemId;
       spawnItemQtyInput.value = currentState.payload.quantity;
       spawnItemTemplateInput.dataset.actId = currentState.payload.containerId;
-      window.selectContainer(currentState.payload.containerId);
+      if (activeContainerId !== currentState.payload.containerId) {
+        window.selectContainer(currentState.payload.containerId, true);
+      }
       updateUncertainStateUI(true);
     } else {
       updateUncertainStateUI(false);
@@ -191,7 +193,7 @@ function setupSpawnModal() {
   });
 
   // Global selectContainer implementation
-  window.selectContainer = async function(id) {
+  window.selectContainer = async function(id, skipStateCheck = false) {
     if (!/^[0-9]+$/.test(String(id))) {
       showToast('Invalid container ID selected.', 'error');
       return;
@@ -217,7 +219,9 @@ function setupSpawnModal() {
       </div>`;
     }
 
-    handleStateCheck();
+    if (!skipStateCheck) {
+      handleStateCheck();
+    }
   };
 
   if (openSpawnModalBtn) {
@@ -331,6 +335,8 @@ function setupSpawnModal() {
 
   const commonItems = ['ScrapMetal', 'CopperOre', 'IronOre', 'FlourSand', 'PlantFiber', 'Basalt', 'DolomiteRock', 'Silicone', 'WaterCanister', 'SpiceMelange'];
   validItemTemplates.innerHTML = commonItems.map(item => `<option value="${item}"></option>`).join('');
+  
+  handleStateCheck();
 }
 
 

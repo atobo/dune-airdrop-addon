@@ -12,7 +12,8 @@ const allowedPermissions = new Set([
   "server:status",
   "server:restart",
   "files:addon-data",
-  "broadcast:send"
+  "broadcast:send",
+  "admin:grant-items"
 ]);
 
 function fail(message) {
@@ -126,6 +127,15 @@ function main() {
   validatePermissions(manifest);
 
   console.log(`Addon manifest is valid: ${manifest.id} ${manifest.version}`);
+
+  console.log("Running automated tests...");
+  const { execSync } = require("child_process");
+  try {
+    execSync("npm test", { stdio: "inherit", cwd: repoRoot });
+    console.log("Tests passed.");
+  } catch (err) {
+    fail("Tests failed.");
+  }
 }
 
 main();

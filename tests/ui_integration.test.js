@@ -105,3 +105,70 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   if (window.__fetchDiagnosticsInterval) clearInterval(window.__fetchDiagnosticsInterval);
   if (window.__fetchPendingInterval) clearInterval(window.__fetchPendingInterval);
 });
+
+test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
+  const htmlPath = path.resolve(__dirname, '../web/index.html');
+  const html = fs.readFileSync(htmlPath, 'utf-8');
+  const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
+  const addonSrc = fs.readFileSync(path.resolve(__dirname, '../web/addon.js'), 'utf-8');
+
+  const addonSrcModified = addonSrc.replace('const isSandboxMode = window.parent === window;', 'const isSandboxMode = false;');
+  const combinedHtml = html.replace('</body>', `<script>${grantLogicSrc}</script><script>${addonSrcModified}</script></body>`);
+
+  const dom = new JSDOM(combinedHtml, { runScripts: "dangerously", url: "http://localhost/" });
+  const window = dom.window;
+  const document = window.document;
+
+  window.crypto = { randomUUID: () => 'test-uuid-123' };
+  
+  // Set an unresolved state in mock localStorage
+  const unresolvedState = {
+    id: "manual:grant:test-uuid-123",
+    status: "PENDING",
+    hash: "12345:TestSword:3:0:9999999999999",
+    payload: { playerId: "12345", itemId: "TestSword", quantity: 3, quality: 0, containerId: "9999999999999" }
+  };
+  
+  window.localStorage.setItem('pending_manual_grant', JSON.stringify(unresolvedState));
+
+  window.DuneAddon = {
+    request: async (action, payload) => {
+      if (action === 'database.query') {
+        if (payload.query.includes("ILIKE '%container%'")) {
+          return { rows: [{ id: '9999999999999', class: '/Game/Chest', owner_account_id: '12345' }] };
+        }
+        return { rows: [] };
+      }
+      return { ok: true };
+    }
+  };
+  window.fetch = async () => ({ ok: true, text: async () => 'mock_sql' });
+
+  // Wait for load and initialization
+  await new Promise(r => setTimeout(r, 100));
+
+  // Explicitly trigger a state check by selecting a container (simulating user click or recovery)
+  if (window.selectContainer) {
+    await window.selectContainer('9999999999999');
+  }
+
+  // The UI should lock inputs because of the pending state
+  const spawnItemTemplateInput = document.getElementById('spawnItemTemplateInput');
+  const spawnItemQtyInput = document.getElementById('spawnItemQtyInput');
+  const discardBtn = document.getElementById('spawnItemDiscardBtn');
+
+  assert.strictEqual(spawnItemTemplateInput.disabled, true, 'Template input should be disabled');
+  assert.strictEqual(spawnItemQtyInput.disabled, true, 'Qty input should be disabled');
+  assert.ok(!discardBtn.classList.contains('hidden'), 'Discard button should be visible');
+  
+  // Discard the state
+  discardBtn.click();
+  await new Promise(r => setTimeout(r, 50));
+  
+  assert.strictEqual(window.localStorage.getItem('pending_manual_grant'), null, 'State should be cleared');
+  assert.strictEqual(spawnItemTemplateInput.disabled, false, 'Template input should be enabled after discard');
+  assert.strictEqual(spawnItemQtyInput.disabled, false, 'Qty input should be enabled after discard');
+
+  if (window.__fetchDiagnosticsInterval) clearInterval(window.__fetchDiagnosticsInterval);
+  if (window.__fetchPendingInterval) clearInterval(window.__fetchPendingInterval);
+});
