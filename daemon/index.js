@@ -53,11 +53,19 @@ async function executeDelivery(row) {
   const client = await pool.connect();
   try {
     // 1. Check Receipt Table FIRST
-    const receiptCheck = await client.query(`SELECT * FROM dune.bot_delivery_receipts WHERE request_id = $1`, [row.request_id]);
+    const receiptCheck = await client.query(`SELECT status FROM dune.bot_delivery_receipts WHERE request_id = $1`, [row.request_id]);
     if (receiptCheck.rows.length > 0) {
-      console.log(`Receipt already exists for request_id ${row.request_id}. Marking as applied without re-running command.`);
-      await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
-      return;
+      const status = receiptCheck.rows[0].status;
+      if (status === 'SUCCESS') {
+        console.log(`Receipt already exists and is SUCCESS for request_id ${row.request_id}. Marking as applied.`);
+        await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+        return;
+      } else if (status === 'PENDING' || status === 'UNCERTAIN') {
+        console.warn(`Request ID ${row.request_id} has status ${status}. The daemon previously crashed during the execution boundary! Transitioning to UNCERTAIN and locking delivery to prevent double-grants.`);
+        await client.query(`UPDATE dune.bot_delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
+        await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+        return;
+      }
     }
   } catch (err) {
     console.error("Error checking receipt:", err);
@@ -66,27 +74,30 @@ async function executeDelivery(row) {
     client.release();
   }
   
-  // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
-  const executable = path.resolve(duneDockerRoot, 'runtime/scripts/dune');
-  const args = ['admin', 'grant-item-id', String(playerId), String(itemId), String(quantity), '1', String(quality)];
-  
-  console.log(`Executing RCON: ${executable} ${args.join(' ')}`);
-  
-  const result = await runCommand(executable, args);
-  
   const updateClient = await pool.connect();
   try {
+    // 2. Persist PENDING receipt BEFORE external execution boundary
+    await updateClient.query(`
+      INSERT INTO dune.bot_delivery_receipts (request_id, account_id, template_id, quantity, status)
+      VALUES ($1, $2, $3, $4, 'PENDING')
+      ON CONFLICT (request_id) DO UPDATE SET status = 'PENDING'
+    `, [row.request_id, playerId, itemId, quantity]);
+    
+    // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
+    const executable = path.resolve(duneDockerRoot, 'runtime/scripts/dune');
+    const args = ['admin', 'grant-item-id', String(playerId), String(itemId), String(quantity), '1', String(quality)];
+    
+    console.log(`Executing RCON: ${executable} ${args.join(' ')}`);
+    const result = await runCommand(executable, args);
+    
     if (result.ok) {
-      console.log(`Successfully dropped item! Writing receipt and marking as applied.`);
-      await updateClient.query(`
-        INSERT INTO dune.bot_delivery_receipts (request_id, account_id, template_id, quantity)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (request_id) DO NOTHING
-      `, [row.request_id, playerId, itemId, quantity]);
+      console.log(`Successfully dropped item! Updating receipt to SUCCESS and marking as applied.`);
+      await updateClient.query(`UPDATE dune.bot_delivery_receipts SET status = 'SUCCESS' WHERE request_id = $1`, [row.request_id]);
       await updateClient.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     } else {
       console.error(`Failed to drop item for delivery ID ${row.id} (Player might be offline?):`, result.error || result.stderr || result.stdout);
-      console.log(`Keeping delivery ID ${row.id} in the queue to retry later.`);
+      console.log(`Removing PENDING receipt to allow retry queueing for delivery ID ${row.id}.`);
+      await updateClient.query(`DELETE FROM dune.bot_delivery_receipts WHERE request_id = $1`, [row.request_id]);
     }
   } catch (err) {
     console.error("Error updating delivery status:", err);

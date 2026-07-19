@@ -4,7 +4,7 @@
     "tailwindcss": "^4.3.2"
   },
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js daemon/*.test.js"
   },
   "devDependencies": {
     "jsdom": "^29.1.1"

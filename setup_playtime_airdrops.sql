@@ -42,8 +42,10 @@ CREATE TABLE IF NOT EXISTS dune.bot_delivery_receipts (
   account_id BIGINT NOT NULL,
   template_id TEXT NOT NULL,
   quantity INT NOT NULL,
+  status TEXT DEFAULT 'SUCCESS',
   granted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+ALTER TABLE IF EXISTS dune.bot_delivery_receipts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'SUCCESS';
 
 -- Notification function for the Node daemon
 CREATE OR REPLACE FUNCTION dune.trg_notify_pending_delivery_v2()
