@@ -39,6 +39,8 @@ async function runCommand(executable, args) {
   }
 }
 
+let isProcessing = false;
+
 async function executeDelivery(row) {
 
   console.log(`Executing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
@@ -47,6 +49,22 @@ async function executeDelivery(row) {
   const itemId = row.template_id;
   const quantity = row.stack_size;
   const quality = row.quality_level || 0;
+
+  const client = await pool.connect();
+  try {
+    // 1. Check Receipt Table FIRST
+    const receiptCheck = await client.query(`SELECT * FROM dune.bot_delivery_receipts WHERE request_id = $1`, [row.request_id]);
+    if (receiptCheck.rows.length > 0) {
+      console.log(`Receipt already exists for request_id ${row.request_id}. Marking as applied without re-running command.`);
+      await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+      return;
+    }
+  } catch (err) {
+    console.error("Error checking receipt:", err);
+    return;
+  } finally {
+    client.release();
+  }
   
   // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
   const executable = path.resolve(duneDockerRoot, 'runtime/scripts/dune');
@@ -56,11 +74,16 @@ async function executeDelivery(row) {
   
   const result = await runCommand(executable, args);
   
-  const client = await pool.connect();
+  const updateClient = await pool.connect();
   try {
     if (result.ok) {
-      console.log(`Successfully dropped item! Marking as applied.`);
-      await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+      console.log(`Successfully dropped item! Writing receipt and marking as applied.`);
+      await updateClient.query(`
+        INSERT INTO dune.bot_delivery_receipts (request_id, account_id, template_id, quantity)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (request_id) DO NOTHING
+      `, [row.request_id, playerId, itemId, quantity]);
+      await updateClient.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     } else {
       console.error(`Failed to drop item for delivery ID ${row.id} (Player might be offline?):`, result.error || result.stderr || result.stdout);
       console.log(`Keeping delivery ID ${row.id} in the queue to retry later.`);
@@ -68,7 +91,7 @@ async function executeDelivery(row) {
   } catch (err) {
     console.error("Error updating delivery status:", err);
   } finally {
-    client.release();
+    updateClient.release();
   }
 }
 
@@ -86,6 +109,9 @@ async function processDelivery(row) {
 }
 
 async function checkPendingDeliveries() {
+  if (isProcessing) return;
+  isProcessing = true;
+
   const client = await pool.connect();
   try {
     // Check if the daemon is enabled in the configuration
@@ -103,7 +129,7 @@ async function checkPendingDeliveries() {
           SELECT id FROM dune.bot_pending_deliveries 
           WHERE is_applied = false 
             AND created_at < NOW() - INTERVAL '60 seconds'
-            AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '30 seconds')
+            AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '300 seconds')
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
@@ -124,6 +150,7 @@ async function checkPendingDeliveries() {
     console.error("Error checking for pending deliveries:", err);
   } finally {
     client.release();
+    isProcessing = false;
   }
 }
 
@@ -184,4 +211,13 @@ async function start() {
   }, 15000);
 }
 
-start();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  start();
+}
+
+export {
+  executeDelivery,
+  checkPendingDeliveries,
+  pool,
+  isProcessing
+};

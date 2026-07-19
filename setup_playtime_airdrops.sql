@@ -23,6 +23,7 @@ ALTER TABLE IF EXISTS dune.bot_active_playtime ADD COLUMN IF NOT EXISTS current_
 -- 2. Create pending deliveries queue table
 CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
   id SERIAL PRIMARY KEY,
+  request_id UUID DEFAULT gen_random_uuid() UNIQUE,
   account_id BIGINT NOT NULL,
   template_id TEXT NOT NULL,
   stack_size INT NOT NULL,
@@ -33,6 +34,16 @@ CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
 );
 ALTER TABLE IF EXISTS dune.bot_pending_deliveries ALTER COLUMN account_id TYPE BIGINT USING account_id::bigint;
 ALTER TABLE IF EXISTS dune.bot_pending_deliveries ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE IF EXISTS dune.bot_pending_deliveries ADD COLUMN IF NOT EXISTS request_id UUID DEFAULT gen_random_uuid() UNIQUE;
+
+-- 2.1 Create persistent delivery receipts table for idempotent grants
+CREATE TABLE IF NOT EXISTS dune.bot_delivery_receipts (
+  request_id UUID PRIMARY KEY,
+  account_id BIGINT NOT NULL,
+  template_id TEXT NOT NULL,
+  quantity INT NOT NULL,
+  granted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
 -- Notification function for the Node daemon
 CREATE OR REPLACE FUNCTION dune.trg_notify_pending_delivery_v2()

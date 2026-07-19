@@ -84,15 +84,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Wire up the manual spawn modal
     setupSpawnModal();
     
-    // Wire up tabs if they exist
+    // Wire up tabs
     const settingsTab = document.getElementById('tabSettingsBtn');
+    const lootTab = document.getElementById('tabLootBtn');
     const settingsView = document.getElementById('settingsView');
     const lootView = document.getElementById('lootView');
     
-    // Add tab for loot if missing, or just show loot view below settings
-    // if (lootView) {
-    //   lootView.classList.remove('hidden');
-    // }
+    if (settingsTab && lootTab && settingsView && lootView) {
+      settingsTab.addEventListener('click', () => {
+        settingsView.classList.remove('hidden');
+        lootView.classList.add('hidden');
+        settingsTab.classList.replace('bg-slate-800', 'bg-amber-500');
+        settingsTab.classList.replace('text-slate-300', 'text-slate-950');
+        settingsTab.classList.add('neon-glow-orange');
+        settingsTab.classList.remove('hover:bg-slate-700');
+        
+        lootTab.classList.replace('bg-amber-500', 'bg-slate-800');
+        lootTab.classList.replace('text-slate-950', 'text-slate-300');
+        lootTab.classList.remove('neon-glow-orange');
+        lootTab.classList.add('hover:bg-slate-700');
+      });
+      
+      lootTab.addEventListener('click', () => {
+        lootView.classList.remove('hidden');
+        settingsView.classList.add('hidden');
+        lootTab.classList.replace('bg-slate-800', 'bg-amber-500');
+        lootTab.classList.replace('text-slate-300', 'text-slate-950');
+        lootTab.classList.add('neon-glow-orange');
+        lootTab.classList.remove('hover:bg-slate-700');
+        
+        settingsTab.classList.replace('bg-amber-500', 'bg-slate-800');
+        settingsTab.classList.replace('text-slate-950', 'text-slate-300');
+        settingsTab.classList.remove('neon-glow-orange');
+        settingsTab.classList.add('hover:bg-slate-700');
+      });
+    }
   }
 });
 

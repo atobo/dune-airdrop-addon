@@ -64,6 +64,13 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   // Clear queries from init phase
   queriesReceived = [];
 
+  // Click the Loot tab to reveal the view
+  const tabLootBtn = document.getElementById('tabLootBtn');
+  if (tabLootBtn) {
+    tabLootBtn.click();
+    await new Promise(r => setTimeout(r, 10));
+  }
+
   // 2. Select Container via UI interaction
   const containerRow = document.getElementById('container-row-9999999999999');
   assert.ok(containerRow, 'Container row should exist');
@@ -171,4 +178,5 @@ test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
 
   if (window.__fetchDiagnosticsInterval) clearInterval(window.__fetchDiagnosticsInterval);
   if (window.__fetchPendingInterval) clearInterval(window.__fetchPendingInterval);
+  setTimeout(() => process.exit(0), 100);
 });
