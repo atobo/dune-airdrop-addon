@@ -30,9 +30,14 @@ docker run -d \
   --name airdrop-daemon \
   --network host \
   --restart unless-stopped \
+  --user "$(id -u):$(id -g)" \
+  --group-add "$(stat -c '%g' /var/run/docker.sock)" \
   -e DUNE_DOCKER_ROOT=/repo \
-  -v $(pwd)/../../../../../runtime/scripts:/repo/runtime/scripts:ro \
-  -v $(pwd)/../../../../../.env:/repo/.env:ro \
+  -v "$PWD/../../../../../runtime/scripts:/repo/runtime/scripts:ro" \
+  -v "$PWD/../../../../../runtime/data:/repo/runtime/data:ro" \
+  -v "$PWD/../../../../../runtime/secrets:/repo/runtime/secrets:ro" \
+  -v "$PWD/../../../../../runtime/generated:/repo/runtime/generated:rw" \
+  -v "$PWD/../../../../../.env:/repo/.env:ro" \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   airdrop-daemon
 ```

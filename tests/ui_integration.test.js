@@ -5,6 +5,15 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 const crypto = require('crypto');
 
+async function waitFor(predicate, message, timeoutMs = 1500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(message);
+}
+
 test('UI Integration - Full Container Selection and Grant Workflow', async () => {
   // Load HTML and Scripts
   const htmlPath = path.resolve(__dirname, '../web/index.html');
@@ -36,6 +45,13 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
     request: async (action, payload) => {
       queriesReceived.push({ action, payload });
       if (action === 'database.query') {
+        if (payload.query.includes("to_regclass('dune.airdrop_config')")) {
+          return { rows: [{
+            config_table: 'dune.airdrop_config',
+            playtime_table: 'dune.airdrop_active_playtime',
+            queue_table: 'dune.airdrop_pending_deliveries'
+          }] };
+        }
         if (payload.query.includes('ILIKE \'%container%\'')) {
           return { rows: [{ id: '9999999999999', class: '/Game/Chest', owner_account_id: '12345' }] };
         }
@@ -54,12 +70,14 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   // Mock fetch
   window.fetch = async () => ({ ok: true, text: async () => 'mock_sql' });
 
-  // Allow microtasks to process
-  await new Promise(r => setTimeout(r, 50));
+  await waitFor(
+    () => document.getElementById('container-row-9999999999999'),
+    'Initial container data did not finish loading'
+  );
 
   // 1. Initial Data Load Validation
   assert.ok(queriesReceived.some(q => q.action === 'database.query' && q.payload.query.includes('config_key = \'airdrop_multipliers\'')));
-  assert.ok(queriesReceived.some(q => q.action === 'database.query' && q.payload.query.includes('SELECT \n          i.id::text as id')));
+  assert.ok(queriesReceived.some(q => q.action === 'database.query' && q.payload.query.includes('FROM dune.inventories i')));
 
   // Clear queries from init phase
   queriesReceived = [];
@@ -96,7 +114,10 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   const confirmBtn = document.getElementById('spawnItemConfirmBtn');
   confirmBtn.click();
   
-  await new Promise(r => setTimeout(r, 50));
+  await waitFor(
+    () => queriesReceived.some((entry) => entry.action === 'admin.items.grant'),
+    'Grant request was not emitted'
+  );
 
   // Validate Queries
   const grantQuery = queriesReceived.find(q => q.action === 'admin.items.grant');
@@ -111,6 +132,39 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   // Cleanup polling intervals to prevent tests from hanging
   if (window.__fetchDiagnosticsInterval) clearInterval(window.__fetchDiagnosticsInterval);
   if (window.__fetchPendingInterval) clearInterval(window.__fetchPendingInterval);
+});
+
+test('UI Integration - Clean install prompts for schema initialization', async () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../web/index.html'), 'utf-8');
+  const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
+  const addonSrc = fs.readFileSync(path.resolve(__dirname, '../web/addon.js'), 'utf-8');
+  const addonSrcModified = addonSrc.replace('const isSandboxMode = window.parent === window;', 'const isSandboxMode = false;');
+  const combinedHtml = html.replace('</body>', `<script>${grantLogicSrc}</script><script>${addonSrcModified}</script></body>`);
+  const dom = new JSDOM(combinedHtml, { runScripts: 'dangerously', url: 'http://localhost/' });
+  const window = dom.window;
+  const queries = [];
+
+  window.DuneAddon = {
+    request: async (action, payload) => {
+      queries.push({ action, payload });
+      if (action === 'database.query' && payload.query.includes("to_regclass('dune.airdrop_config')")) {
+        return { rows: [{ config_table: null, playtime_table: null, queue_table: null }] };
+      }
+      return { rows: [] };
+    }
+  };
+  window.fetch = async () => ({ ok: true, text: async () => 'mock_sql' });
+
+  await waitFor(
+    () => window.document.getElementById('connectionStatusBadge').textContent === 'Setup Required',
+    'Clean installation did not enter setup-required state'
+  );
+
+  assert.equal(window.document.getElementById('connectionStatusBadge').textContent, 'Setup Required');
+  assert.ok(queries.some((entry) => entry.payload.query.includes("to_regclass('dune.airdrop_config')")));
+  assert.ok(!queries.some((entry) => entry.payload.query.includes("config_key = 'airdrop_multipliers'")));
+  assert.equal(window.__fetchDiagnosticsInterval, undefined);
+  assert.equal(window.__fetchPendingInterval, undefined);
 });
 
 test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
@@ -141,6 +195,13 @@ test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
   window.DuneAddon = {
     request: async (action, payload) => {
       if (action === 'database.query') {
+        if (payload.query.includes("to_regclass('dune.airdrop_config')")) {
+          return { rows: [{
+            config_table: 'dune.airdrop_config',
+            playtime_table: 'dune.airdrop_active_playtime',
+            queue_table: 'dune.airdrop_pending_deliveries'
+          }] };
+        }
         if (payload.query.includes("ILIKE '%container%'")) {
           return { rows: [{ id: '9999999999999', class: '/Game/Chest', owner_account_id: '12345' }] };
         }

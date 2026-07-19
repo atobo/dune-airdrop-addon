@@ -4,7 +4,7 @@
 -- 1. Remove Triggers
 DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.encrypted_player_state;
 DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.player_state;
-DROP TRIGGER IF EXISTS trg_notify_airdrop ON dune.bot_pending_deliveries;
+DROP TRIGGER IF EXISTS trg_notify_airdrop ON dune.airdrop_pending_deliveries;
 
 -- 2. Remove Functions
 DROP FUNCTION IF EXISTS dune.trg_track_playtime_v2();
@@ -25,11 +25,9 @@ DROP FUNCTION IF EXISTS dune.fn_manual_airdrop_spawn(BIGINT, TEXT, INT);
 
 -- 3. Remove Tables
 DROP TABLE IF EXISTS dune.airdrop_loot_tables;
-DELETE FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
-DELETE FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy';
-DELETE FROM dune.discord_bot_config WHERE config_key = 'daemon_heartbeat';
-DROP TABLE IF EXISTS dune.bot_pending_deliveries;
-DROP TABLE IF EXISTS dune.bot_delivery_receipts;
-DROP TABLE IF EXISTS dune.bot_active_playtime;
+DROP TABLE IF EXISTS dune.airdrop_pending_deliveries;
+DROP TABLE IF EXISTS dune.airdrop_delivery_receipts;
+DROP TABLE IF EXISTS dune.airdrop_active_playtime;
+DROP TABLE IF EXISTS dune.airdrop_config;
 
 SELECT 'Arrakis Playtime Airdrop database successfully cleaned up!' AS status;

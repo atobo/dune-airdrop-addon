@@ -43,7 +43,7 @@ const isSandboxMode = window.parent === window;
 
 document.addEventListener('DOMContentLoaded', async () => {
   setupMultipliersSync();
-  
+
   const clearQueueBtn = document.getElementById('clearQueueBtn');
   if (clearQueueBtn) {
     clearQueueBtn.addEventListener('click', async () => {
@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!confirmed) return;
       try {
         await window.DuneAddon.request("database.execute", {
-          query: 'DELETE FROM dune.bot_pending_deliveries WHERE is_applied = false'
+          query: 'DELETE FROM dune.airdrop_pending_deliveries WHERE is_applied = false'
         });
         showToast('Pending airdrop queue cleared!', 'success');
         fetchPendingAirdrops();
@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
-  
+
   if (isSandboxMode) {
     connectionStatusBadge.textContent = 'Bridge Sandbox';
     connectionStatusBadge.className = connectionStatusBadge.className.replace('text-amber-500', 'text-amber-400');
@@ -80,26 +80,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
     connectionStatusBadge.textContent = 'Console Connected';
     connectionStatusBadge.className = connectionStatusBadge.className.replace('bg-amber-500/10 text-amber-500', 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20');
-    
-    // Initial fetch of data
-    await loadSettings();
-    await fetchDiagnostics();
-    await fetchPendingAirdrops();
-    await fetchContainers();
-    
-    // Set up polling intervals
-    window.__fetchDiagnosticsInterval = setInterval(fetchDiagnostics, 5000);
-    window.__fetchPendingInterval = setInterval(fetchPendingAirdrops, 5000);
-    
+
+    const schemaReady = await isAirdropSchemaReady();
+    if (schemaReady) {
+      await loadSettings();
+      await fetchDiagnostics();
+      await fetchPendingAirdrops();
+      await fetchContainers();
+
+      window.__fetchDiagnosticsInterval = setInterval(fetchDiagnostics, 5000);
+      window.__fetchPendingInterval = setInterval(fetchPendingAirdrops, 5000);
+    } else {
+      connectionStatusBadge.textContent = 'Setup Required';
+      connectionStatusBadge.className = connectionStatusBadge.className.replace(
+        'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+        'bg-amber-500/10 text-amber-400 border-amber-500/20'
+      );
+      showToast('Database setup is required. Click INIT SCHEMA to finish installing Airdrop Manager.', 'warning');
+    }
+
     // Wire up the manual spawn modal
     setupSpawnModal();
-    
+
     // Wire up tabs
     const settingsTab = document.getElementById('tabSettingsBtn');
     const lootTab = document.getElementById('tabLootBtn');
     const settingsView = document.getElementById('settingsView');
     const lootView = document.getElementById('lootView');
-    
+
     if (settingsTab && lootTab && settingsView && lootView) {
       settingsTab.addEventListener('click', () => {
         settingsView.classList.remove('hidden');
@@ -108,13 +116,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         settingsTab.classList.replace('text-slate-300', 'text-slate-950');
         settingsTab.classList.add('neon-glow-orange');
         settingsTab.classList.remove('hover:bg-slate-700');
-        
+
         lootTab.classList.replace('bg-amber-500', 'bg-slate-800');
         lootTab.classList.replace('text-slate-950', 'text-slate-300');
         lootTab.classList.remove('neon-glow-orange');
         lootTab.classList.add('hover:bg-slate-700');
       });
-      
+
       lootTab.addEventListener('click', () => {
         lootView.classList.remove('hidden');
         settingsView.classList.add('hidden');
@@ -122,7 +130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         lootTab.classList.replace('text-slate-300', 'text-slate-950');
         lootTab.classList.add('neon-glow-orange');
         lootTab.classList.remove('hover:bg-slate-700');
-        
+
         settingsTab.classList.replace('bg-amber-500', 'bg-slate-800');
         settingsTab.classList.replace('text-slate-950', 'text-slate-300');
         settingsTab.classList.remove('neon-glow-orange');
@@ -236,7 +244,7 @@ function setupSpawnModal() {
     }
     activeContainerId = String(id);
     spawnItemTemplateInput.dataset.actId = activeContainerId;
-    
+
     // Update UI highlights
     const rows = document.querySelectorAll('.container-row');
     rows.forEach(r => r.classList.remove('bg-amber-900/30', 'border-amber-500/50'));
@@ -244,9 +252,9 @@ function setupSpawnModal() {
     if (selectedRow) {
       selectedRow.classList.add('bg-amber-900/30', 'border-amber-500/50');
     }
-    
+
     if (openSpawnModalBtn) openSpawnModalBtn.classList.remove('hidden');
-    
+
     // Clear container grid to show it is selected
     const grid = document.getElementById('containerInventoryGrid');
     if (grid) {
@@ -269,7 +277,7 @@ function setupSpawnModal() {
   spawnItemConfirmBtn.addEventListener('click', async () => {
     const templateId = spawnItemTemplateInput.value.trim();
     const qty = Number(spawnItemQtyInput.value);
-    
+
     if (!/^[A-Za-z0-9_./:-]{1,240}$/.test(templateId)) {
       showToast('Enter a valid item template ID.', 'error');
       return;
@@ -302,7 +310,7 @@ function setupSpawnModal() {
       const res = await window.DuneAddon.request("database.query", {
         query: `SELECT account_id FROM dune.inventories WHERE id = ${actId}::bigint LIMIT 1`
       });
-      
+
       const account_id = (res.rows && res.rows.length === 1 && res.rows[0] && res.rows[0].account_id) ? String(res.rows[0].account_id) : null;
 
       if (!account_id || account_id.trim() === '') {
@@ -338,7 +346,7 @@ function setupSpawnModal() {
       const receipt = await window.DuneAddon.request("admin.items.grant", payload);
 
       const outcome = handleBridgeReceipt(receipt, stateDecision.newState, window.localStorage);
-      
+
       if (outcome.success) {
         showToast(`Successfully spawned ${qNum}x ${templateId}`, 'success');
         updateUncertainStateUI(false);
@@ -371,23 +379,40 @@ function setupSpawnModal() {
 
   const commonItems = ['ScrapMetal', 'CopperOre', 'IronOre', 'FlourSand', 'PlantFiber', 'Basalt', 'DolomiteRock', 'Silicone', 'WaterCanister', 'SpiceMelange'];
   validItemTemplates.innerHTML = commonItems.map(item => `<option value="${item}"></option>`).join('');
-  
+
   handleStateCheck();
 }
 
 
 // --- Database Operations ---
+async function isAirdropSchemaReady() {
+  try {
+    const rawResult = await window.DuneAddon.request("database.query", {
+      query: `SELECT
+                to_regclass('dune.airdrop_config')::text AS config_table,
+                to_regclass('dune.airdrop_active_playtime')::text AS playtime_table,
+                to_regclass('dune.airdrop_pending_deliveries')::text AS queue_table`
+    });
+    const rows = rawResult.rows || rawResult || [];
+    const row = rows[0] || {};
+    return Boolean(row.config_table && row.playtime_table && row.queue_table);
+  } catch (err) {
+    showToast(`Failed to check database setup: ${err.message}`, 'error');
+    return false;
+  }
+}
+
 async function loadSettings() {
   try {
     const rawRes = await window.DuneAddon.request("database.query", {
-      query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
+      query: "SELECT config_value FROM dune.airdrop_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
     });
     const res = rawRes.rows || rawRes || [];
-    
-    let mults = { 
-      playtime_enabled: true, 
-      playtime_interval: 60, 
-      playtime_distance: 10, 
+
+    let mults = {
+      playtime_enabled: true,
+      playtime_interval: 60,
+      playtime_distance: 10,
       playtime_xp: 1,
       daily_enabled: true,
       daily_multiplier_step: 0.5,
@@ -400,7 +425,7 @@ async function loadSettings() {
     if (res && res.length > 0 && res[0].config_value) {
       mults = { ...mults, ...res[0].config_value };
     }
-    
+
     // Load playtime inputs
     document.getElementById('playtimeEnabledToggle').checked = mults.playtime_enabled !== undefined ? mults.playtime_enabled : true;
     playtimeIntervalInput.value = mults.playtime_interval || 60;
@@ -430,7 +455,7 @@ async function loadSettings() {
 
 
     const rawResEcon = await window.DuneAddon.request("database.query", {
-      query: "SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy' LIMIT 1"
+      query: "SELECT config_value FROM dune.airdrop_config WHERE config_key = 'airdrop_economy' LIMIT 1"
     });
     const resEcon = rawResEcon.rows || rawResEcon || [];
     let econ = {
@@ -526,18 +551,18 @@ async function handleSaveAllSettings() {
 
     const escapedEconJson = JSON.stringify(econPayload).replace(/'/g, "''");
     await window.DuneAddon.request("database.execute", {
-      query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
-              VALUES ('airdrop_economy', '${escapedEconJson}'::jsonb) 
-              ON CONFLICT (config_key) 
+      query: `INSERT INTO dune.airdrop_config (config_key, config_value)
+              VALUES ('airdrop_economy', '${escapedEconJson}'::jsonb)
+              ON CONFLICT (config_key)
               DO UPDATE SET config_value = EXCLUDED.config_value`
     });
 
     // 1. Save Airdrops Config
     const escapedJson = JSON.stringify(payload).replace(/'/g, "''");
     await window.DuneAddon.request("database.execute", {
-      query: `INSERT INTO dune.discord_bot_config (config_key, config_value) 
-              VALUES ('airdrop_multipliers', '${escapedJson}'::jsonb) 
-              ON CONFLICT (config_key) 
+      query: `INSERT INTO dune.airdrop_config (config_key, config_value)
+              VALUES ('airdrop_multipliers', '${escapedJson}'::jsonb)
+              ON CONFLICT (config_key)
               DO UPDATE SET config_value = EXCLUDED.config_value`
     });
 
@@ -552,20 +577,21 @@ async function handleInitializeSchema() {
     showToast('Mock: Database schema initialized successfully!', 'success');
     return;
   }
-  
+
   try {
     showToast('Loading SQL schema from addon package...', 'success');
     const response = await fetch('../setup_playtime_airdrops.sql');
     if (!response.ok) throw new Error('Failed to fetch SQL file.');
-    
+
     const sqlQuery = await response.text();
-    
+
     showToast('Executing schema creation... This may take a moment.', 'success');
     await window.DuneAddon.request("database.execute", {
       query: sqlQuery
     });
-    
-    showToast('Database schema and triggers initialized successfully!', 'success');
+
+    showToast('Database schema and triggers initialized successfully. Reloading...', 'success');
+    window.setTimeout(() => window.location.reload(), 500);
   } catch (err) {
     showToast(`Schema init failed: ${err.message}`, 'error');
   }
@@ -576,7 +602,7 @@ async function fetchDiagnostics() {
 
   try {
     const rawPlayers = await window.DuneAddon.request("database.query", {
-      query: `SELECT 
+      query: `SELECT
                 ps.character_name AS name,
                 ps.player_pawn_id AS character_id,
                 COALESCE(act.map, 'Unknown') AS map,
@@ -585,7 +611,7 @@ async function fetchDiagnostics() {
                 COALESCE(bp.weekly_login_mask, 0) AS weekly_login_mask
               FROM dune.player_state ps
               LEFT JOIN dune.actors act ON ps.player_pawn_id = act.id
-              LEFT JOIN dune.bot_active_playtime bp ON ps.player_pawn_id = bp.character_id::bigint
+              LEFT JOIN dune.airdrop_active_playtime bp ON ps.player_pawn_id = bp.character_id::bigint
               WHERE ps.player_pawn_id IS NOT NULL AND LOWER(ps.online_status::text) = 'online'`
     });
     const players = rawPlayers.rows || rawPlayers || [];
@@ -605,7 +631,7 @@ async function fetchDiagnostics() {
       const activeMin = Math.floor(p.active_seconds / 60);
       const limitMin = parseInt(playtimeIntervalInput.value) || 60;
       const nextMin = Math.max(0, limitMin - activeMin);
-      
+
       const weeklyLogins = (p.weekly_login_mask || 0).toString(2).split('1').length - 1;
       const weeklyReq = parseInt(document.getElementById('weeklyDaysRequiredInput').value) || 5;
 
@@ -635,7 +661,7 @@ async function fetchPendingAirdrops() {
   try {
     const rawList = await window.DuneAddon.request("database.query", {
       query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size
-              FROM dune.bot_pending_deliveries bpd
+              FROM dune.airdrop_pending_deliveries bpd
               LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
               WHERE bpd.is_applied = false
               ORDER BY bpd.created_at DESC`
@@ -648,7 +674,7 @@ async function fetchPendingAirdrops() {
     // Populate filter dropdown
     const selected = airdropPlayerSelect.value;
     const names = [...new Set(pendingAirdropsData.map(d => d.character_name))].sort();
-    airdropPlayerSelect.innerHTML = '<option value="all">All Characters</option>' + 
+    airdropPlayerSelect.innerHTML = '<option value="all">All Characters</option>' +
       names.map(n => `<option value="${escapeHTML(n)}">${escapeHTML(n)}</option>`).join('');
     if (names.includes(selected) || selected === 'all') {
       airdropPlayerSelect.value = selected;
@@ -665,8 +691,8 @@ async function fetchPendingAirdrops() {
 
 function renderPendingAirdrops() {
   const filter = airdropPlayerSelect.value;
-  const filtered = filter === 'all' 
-    ? pendingAirdropsData 
+  const filtered = filter === 'all'
+    ? pendingAirdropsData
     : pendingAirdropsData.filter(d => d.character_name === filter);
 
   if (filtered.length === 0) {
@@ -695,7 +721,7 @@ async function fetchContainers() {
   try {
     const rawList = await window.DuneAddon.request("database.query", {
       query: `
-        SELECT 
+        SELECT
           i.id::text as id,
           a.class,
           a.owner_account_id
@@ -705,14 +731,14 @@ async function fetchContainers() {
         LIMIT 100
       `
     });
-    
+
     const containers = rawList.rows || rawList || [];
-    
+
     if (containers.length === 0) {
       tableBody.innerHTML = `<tr><td colspan="4" class="py-4 text-center italic text-slate-500">No containers found.</td></tr>`;
       return;
     }
-    
+
     tableBody.innerHTML = containers.map(c => {
       const cls = c.class ? c.class.split('/').pop().replace('_C', '') : 'Unknown';
       const isSelected = activeContainerId === c.id;
@@ -737,10 +763,10 @@ async function fetchContainers() {
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
-  
+
   const toast = document.createElement('div');
   toast.className = `pointer-events-auto flex items-center gap-2 px-4 py-3 rounded-lg border font-mono text-xs shadow-lg transition-all duration-300 transform translate-y-2 opacity-0`;
-  
+
   if (type === 'success') {
     toast.className += ' bg-slate-900 border-emerald-500/30 text-emerald-400';
   } else if (type === 'error') {
@@ -748,16 +774,16 @@ function showToast(message, type = 'success') {
   } else {
     toast.className += ' bg-slate-900 border-amber-500/30 text-amber-400';
   }
-  
+
   const icon = type === 'success' ? '✅' : (type === 'error' ? '❌' : '⚠️');
   toast.innerHTML = `<span>${icon}</span> <span class="flex-1">${escapeHTML(message)}</span>`;
-  
+
   container.appendChild(toast);
-  
+
   setTimeout(() => {
     toast.classList.remove('translate-y-2', 'opacity-0');
   }, 10);
-  
+
   setTimeout(() => {
     toast.classList.add('translate-y-2', 'opacity-0');
     setTimeout(() => {
@@ -782,7 +808,7 @@ function loadMockData() {
       <td class="py-2 text-right text-slate-600">PENDING</td>
     </tr>
   `;
-  
+
   pendingAirdropsTableBody.innerHTML = `
     <tr class="border-b border-slate-900/40 font-mono text-xs">
       <td class="py-1.5 text-slate-300">PlayerOne</td>
@@ -802,8 +828,8 @@ window.testResetDaily = async function(characterId) {
     const safeCharacterId = String(characterId);
     if (!/^[0-9]+$/.test(safeCharacterId)) throw new Error('Invalid character ID');
     await window.DuneAddon.request("database.execute", {
-      query: `UPDATE dune.bot_active_playtime 
-              SET last_login_date = NULL, consecutive_days = 0 
+      query: `UPDATE dune.airdrop_active_playtime
+              SET last_login_date = NULL, consecutive_days = 0
               WHERE character_id = ${safeCharacterId}::bigint`
     });
     showToast('Daily streak reset for player!', 'success');
@@ -819,8 +845,8 @@ window.testSetWeekly = async function(characterId) {
     if (!/^[0-9]+$/.test(safeCharacterId)) throw new Error('Invalid character ID');
     // 31 in binary is 11111 (5 days)
     await window.DuneAddon.request("database.execute", {
-      query: `UPDATE dune.bot_active_playtime 
-              SET weekly_login_mask = 31, last_weekly_claimed_at = NULL 
+      query: `UPDATE dune.airdrop_active_playtime
+              SET weekly_login_mask = 31, last_weekly_claimed_at = NULL
               WHERE character_id = ${safeCharacterId}::bigint`
     });
     showToast('Weekly mask set to 5 days!', 'success');
