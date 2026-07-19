@@ -51,9 +51,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         showToast('Mock: Queue cleared!', 'success');
         return;
       }
+      const pendingCount = pendingAirdropsData.length;
+      if (pendingCount === 0) {
+        showToast('There are no pending airdrops to clear.', 'warning');
+        return;
+      }
+      const confirmed = window.confirm(
+        `Clear ${pendingCount} pending airdrop${pendingCount === 1 ? '' : 's'}? ` +
+        'These rewards have not been confirmed as delivered and cannot be restored from this screen.'
+      );
+      if (!confirmed) return;
       try {
         await window.DuneAddon.request("database.execute", {
-          query: 'DELETE FROM dune.bot_pending_deliveries'
+          query: 'DELETE FROM dune.bot_pending_deliveries WHERE is_applied = false'
         });
         showToast('Pending airdrop queue cleared!', 'success');
         fetchPendingAirdrops();
@@ -152,7 +162,7 @@ function setupMultipliersSync() {
   syncRangeAndNumber(document.getElementById('probSchemSlider'), document.getElementById('probSchemInput'), 0, 100, 1);
   syncRangeAndNumber(document.getElementById('probCraftSlider'), document.getElementById('probCraftInput'), 0, 100, 1);
   syncRangeAndNumber(document.getElementById('probRawSlider'), document.getElementById('probRawInput'), 0, 100, 1);
-  syncRangeAndNumber(document.getElementById('minItemsSlider'), document.getElementById('minItemsInput'), 0, 10, 1);
+  syncRangeAndNumber(document.getElementById('minItemsSlider'), document.getElementById('minItemsInput'), 0, 4, 1);
 
   // Sync Tier Multipliers
   for (let t = 0; t <= 6; t++) {
@@ -258,10 +268,14 @@ function setupSpawnModal() {
 
   spawnItemConfirmBtn.addEventListener('click', async () => {
     const templateId = spawnItemTemplateInput.value.trim();
-    const qty = parseInt(spawnItemQtyInput.value) || 1;
+    const qty = Number(spawnItemQtyInput.value);
     
-    if (!templateId) {
-      showToast('Please enter an item template ID.', 'error');
+    if (!/^[A-Za-z0-9_./:-]{1,240}$/.test(templateId)) {
+      showToast('Enter a valid item template ID.', 'error');
+      return;
+    }
+    if (!Number.isInteger(qty) || qty < 1 || qty > 1000) {
+      showToast('Quantity must be a whole number from 1 to 1000.', 'error');
       return;
     }
 
@@ -282,10 +296,7 @@ function setupSpawnModal() {
       if (!/^[0-9]+$/.test(actId)) {
         throw new Error("Invalid container ID format");
       }
-      const qNum = Number(qty);
-      if (isNaN(qNum) || qNum <= 0) {
-        throw new Error("Invalid parameters");
-      }
+      const qNum = qty;
 
       // Resolve actId to FLS account_id securely with bigint cast
       const res = await window.DuneAddon.request("database.query", {
@@ -339,19 +350,18 @@ function setupSpawnModal() {
         throw new Error(outcome.message);
       }
     } catch (err) {
-      const errMsg = (err.message || '').toLowerCase();
-      if (errMsg.includes('unsupported action') || errMsg.includes('permission') || errMsg.includes('not approved')) {
-        showToast(`Permission denied or unsupported: ${err.message}`, 'error');
-        handlePermanentRejection(null, window.localStorage); // Clean up state since it's a permanent rejection
-      } else {
+      if (isAmbiguousBridgeError(err)) {
         showToast(`Failed to spawn item: ${err.message}`, 'error');
-        // Persist UNCERTAIN for ambiguous network errors / timeouts
         const currentState = getStoredGrantState(window.localStorage);
         if (currentState) {
           currentState.status = 'UNCERTAIN';
           setStoredGrantState(currentState, window.localStorage);
         }
-        handleStateCheck(); // update UI to reflect potential uncertain lock
+        handleStateCheck();
+      } else {
+        handlePermanentRejection(null, window.localStorage);
+        updateUncertainStateUI(false);
+        showToast(`Spawn request rejected: ${err.message}`, 'error');
       }
     } finally {
       spawnItemConfirmBtn.disabled = false;
@@ -507,7 +517,7 @@ async function handleSaveAllSettings() {
       prob_schem: getFloat(document.getElementById('probSchemInput').value, 80) / 100,
       prob_craft: getFloat(document.getElementById('probCraftInput').value, 100) / 100,
       prob_raw: getFloat(document.getElementById('probRawInput').value, 100) / 100,
-      min_items: getInt(document.getElementById('minItemsInput').value, 1),
+      min_items: Math.max(0, Math.min(4, getInt(document.getElementById('minItemsInput').value, 1))),
     };
     for (let t = 0; t <= 6; t++) {
       econPayload[`tier_${t}_min`] = getInt(document.getElementById(`t${t}MinInput`).value, 1);
@@ -590,6 +600,8 @@ async function fetchDiagnostics() {
     }
 
     diagnosticsTableBody.innerHTML = players.map(p => {
+      const characterId = String(p.character_id || '');
+      const hasValidCharacterId = /^[0-9]+$/.test(characterId);
       const activeMin = Math.floor(p.active_seconds / 60);
       const limitMin = parseInt(playtimeIntervalInput.value) || 60;
       const nextMin = Math.max(0, limitMin - activeMin);
@@ -606,8 +618,8 @@ async function fetchDiagnostics() {
           <td class="py-2 text-slate-400">${weeklyLogins} / ${weeklyReq}</td>
           <td class="py-2 text-right text-slate-500">${escapeHTML(p.map)}</td>
           <td class="py-2 text-right">
-            <button onclick="testResetDaily(${p.character_id})" class="text-[10px] bg-red-900/40 hover:bg-red-800 text-red-200 px-2 py-1 rounded">Reset Daily</button>
-            <button onclick="testSetWeekly(${p.character_id})" class="text-[10px] bg-blue-900/40 hover:bg-blue-800 text-blue-200 px-2 py-1 rounded ml-1">Set 5/5</button>
+            ${hasValidCharacterId ? `<button onclick="testResetDaily('${characterId}')" class="text-[10px] bg-red-900/40 hover:bg-red-800 text-red-200 px-2 py-1 rounded">Reset Daily</button>
+            <button onclick="testSetWeekly('${characterId}')" class="text-[10px] bg-blue-900/40 hover:bg-blue-800 text-blue-200 px-2 py-1 rounded ml-1">Set 5/5</button>` : '-'}
           </td>
         </tr>
       `;
@@ -787,10 +799,12 @@ window.showToast = showToast;
 
 window.testResetDaily = async function(characterId) {
   try {
+    const safeCharacterId = String(characterId);
+    if (!/^[0-9]+$/.test(safeCharacterId)) throw new Error('Invalid character ID');
     await window.DuneAddon.request("database.execute", {
       query: `UPDATE dune.bot_active_playtime 
               SET last_login_date = NULL, consecutive_days = 0 
-              WHERE character_id = ${characterId}`
+              WHERE character_id = ${safeCharacterId}::bigint`
     });
     showToast('Daily streak reset for player!', 'success');
     fetchDiagnostics();
@@ -801,11 +815,13 @@ window.testResetDaily = async function(characterId) {
 
 window.testSetWeekly = async function(characterId) {
   try {
+    const safeCharacterId = String(characterId);
+    if (!/^[0-9]+$/.test(safeCharacterId)) throw new Error('Invalid character ID');
     // 31 in binary is 11111 (5 days)
     await window.DuneAddon.request("database.execute", {
       query: `UPDATE dune.bot_active_playtime 
               SET weekly_login_mask = 31, last_weekly_claimed_at = NULL 
-              WHERE character_id = ${characterId}`
+              WHERE character_id = ${safeCharacterId}::bigint`
     });
     showToast('Weekly mask set to 5 days!', 'success');
     fetchDiagnostics();

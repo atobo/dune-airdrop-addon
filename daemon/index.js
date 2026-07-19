@@ -4,6 +4,8 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { classifyGrantResult } from './deliveryResult.js';
+import { buildDatabaseConfig, parseEnvFile } from './databaseConfig.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -12,23 +14,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const duneDockerRoot = process.env.DUNE_DOCKER_ROOT || '/repo';
 
-// Automatically find the password from the server's .env file!
-let dbPassword = "dune";
+let envFileValues = {};
 try {
   const envPath = path.resolve(duneDockerRoot, '.env');
-  const envFile = fs.readFileSync(envPath, 'utf8');
-  const match = envFile.match(/^DUNE_DB_PASSWORD=(.*)$/m);
-  if (match) dbPassword = match[1].trim();
+  envFileValues = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
 } catch (e) {
-  console.error("Could not read .env file, using default password.");
+  console.warn("Could not read .env file; using environment variables and database defaults.");
 }
 
-const DB_URL = process.env.DATABASE_URL || `postgres://dune:${dbPassword}@127.0.0.1:15432/dune`;
-
-const pool = new pg.Pool({
-  connectionString: DB_URL,
-  connectionTimeoutMillis: 2000, // Fail fast if the DB is unreachable
-});
+const databaseConfig = buildDatabaseConfig(process.env, envFileValues);
+const pool = new pg.Pool(databaseConfig.pool);
 
 async function runCommand(executable, args) {
   try {
@@ -90,14 +85,20 @@ async function executeDelivery(row) {
     console.log(`Executing RCON: ${executable} ${args.join(' ')}`);
     const result = await runCommand(executable, args);
     
-    if (result.ok) {
+    const outcome = classifyGrantResult(result);
+    if (outcome === 'SUCCESS') {
       console.log(`Successfully dropped item! Updating receipt to SUCCESS and marking as applied.`);
       await updateClient.query(`UPDATE dune.bot_delivery_receipts SET status = 'SUCCESS' WHERE request_id = $1`, [row.request_id]);
+      await updateClient.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+    } else if (outcome === 'UNCERTAIN') {
+      console.warn(`Item command was published but inventory verification did not confirm delivery ${row.id}. Locking it as UNCERTAIN to prevent a duplicate grant.`);
+      await updateClient.query(`UPDATE dune.bot_delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
       await updateClient.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     } else {
       console.error(`Failed to drop item for delivery ID ${row.id} (Player might be offline?):`, result.error || result.stderr || result.stdout);
       console.log(`Removing PENDING receipt to allow retry queueing for delivery ID ${row.id}.`);
       await updateClient.query(`DELETE FROM dune.bot_delivery_receipts WHERE request_id = $1`, [row.request_id]);
+      await updateClient.query(`UPDATE dune.bot_pending_deliveries SET locked_at = NULL WHERE id = $1`, [row.id]);
     }
   } catch (err) {
     console.error("Error updating delivery status:", err);
@@ -167,8 +168,7 @@ async function checkPendingDeliveries() {
 
 async function start() {
   console.log("Starting Dune Airdrop Node.js Delivery Daemon...");
-  const sanitizedUrl = DB_URL.replace(/:([^:@]+)@/, ':***@');
-  console.log("Attempting to connect to database at", sanitizedUrl, "...");
+  console.log("Attempting to connect to database at", databaseConfig.display, "...");
   
   let client;
   try {

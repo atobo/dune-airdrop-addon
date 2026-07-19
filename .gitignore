@@ -1,6 +1,5 @@
-﻿node_modules/
+node_modules/
+*.deb
 tailwindcss.exe
-package-lock.json
-package.json
 tailwind.config.js
 web/input.css

@@ -132,7 +132,7 @@ test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
   const unresolvedState = {
     id: "manual:grant:test-uuid-123",
     status: "PENDING",
-    hash: "12345:TestSword:3:0:9999999999999",
+    hash: JSON.stringify(["12345", "TestSword", 3, 0, "9999999999999"]),
     payload: { playerId: "12345", itemId: "TestSword", quantity: 3, quality: 0, containerId: "9999999999999" }
   };
   

@@ -102,6 +102,23 @@ function validatePermissions(manifest) {
   }
 }
 
+function validateRuntimeFiles() {
+  const requiredFiles = [
+    "setup_playtime_airdrops.sql",
+    "uninstall_playtime_airdrops.sql",
+    "daemon/package.json",
+    "daemon/package-lock.json",
+    "daemon/index.js",
+    "daemon/databaseConfig.js",
+    "scripts/create_zip.py"
+  ];
+  for (const relativePath of requiredFiles) {
+    if (!fs.existsSync(path.join(repoRoot, relativePath))) {
+      fail(`required runtime file is missing: ${relativePath}`);
+    }
+  }
+}
+
 function main() {
   const manifest = readManifest();
 
@@ -125,6 +142,7 @@ function main() {
 
   validateEntry(manifest);
   validatePermissions(manifest);
+  validateRuntimeFiles();
 
   console.log(`Addon manifest is valid: ${manifest.id} ${manifest.version}`);
 

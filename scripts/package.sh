@@ -9,8 +9,8 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v zip >/dev/null 2>&1; then
-  echo "zip is required to package the addon." >&2
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to package the addon." >&2
   exit 1
 fi
 
@@ -23,7 +23,14 @@ PACKAGE_NAME="${ADDON_ID}-${ADDON_VERSION}.zip"
 rm -rf dist
 mkdir -p dist
 
-zip -r "dist/${PACKAGE_NAME}" addon.json web daemon setup_playtime_airdrops.sql README.md -x "*.DS_Store" -x "daemon/node_modules/*" -x "daemon/node_modules/" >/dev/null
+python3 scripts/create_zip.py "dist/${PACKAGE_NAME}" \
+  addon.json assets/dune_airdrop_art.png \
+  web/addon.css web/addon.js web/dune-addon-bridge.js \
+  web/grant_logic.js web/index.html web/style.css \
+  daemon/.dockerignore daemon/Dockerfile daemon/README.md \
+  daemon/index.js daemon/databaseConfig.js daemon/deliveryResult.js \
+  daemon/package.json daemon/package-lock.json \
+  setup_playtime_airdrops.sql uninstall_playtime_airdrops.sql README.md
 
 echo "Created: dist/${PACKAGE_NAME}"
 

@@ -176,6 +176,7 @@ DECLARE
   v_tier_min INT := 5;
   v_tier_max INT := 10;
   v_granted_count INT := 0;
+  v_minimum_attempts INT := 0;
 BEGIN
   v_num_rolls := GREATEST(1, ROUND(p_multiplier));
 
@@ -185,7 +186,9 @@ BEGIN
     v_prob_schem := COALESCE((v_econ->>'prob_schem')::numeric, 0.80);
     v_prob_raw := COALESCE((v_econ->>'prob_raw')::numeric, 1.0);
     v_prob_craft := COALESCE((v_econ->>'prob_craft')::numeric, 1.0);
-    v_min_drops := COALESCE((v_econ->>'min_items')::int, 1);
+    -- A reward roll has four distinct categories, so a larger minimum can
+    -- never be satisfied and would otherwise leave the trigger looping.
+    v_min_drops := LEAST(4, GREATEST(0, COALESCE((v_econ->>'min_items')::int, 1)));
     v_tier_min := COALESCE((v_econ->>('tier_' || p_tier || '_min'))::int, 5);
     v_tier_max := GREATEST(v_tier_min, COALESCE((v_econ->>('tier_' || p_tier || '_max'))::int, 10));
   END IF;
@@ -196,6 +199,7 @@ BEGIN
     v_schem_template := NULL;
     v_res_template_1 := NULL;
     v_res_template_2 := NULL;
+    v_minimum_attempts := 0;
 
     -- Initial Rolls
     IF RANDOM() <= v_prob_gear THEN
@@ -219,7 +223,8 @@ BEGIN
     END IF;
 
     -- Minimum guarantee
-    WHILE v_granted_count < v_min_drops LOOP
+    WHILE v_granted_count < v_min_drops AND v_minimum_attempts < 32 LOOP
+      v_minimum_attempts := v_minimum_attempts + 1;
       -- Pick a random missing category
       IF v_gear_template IS NULL AND RANDOM() < 0.25 THEN
         SELECT template_id INTO v_gear_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'gear' ORDER BY RANDOM() * weight DESC LIMIT 1;

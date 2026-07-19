@@ -282,10 +282,10 @@
             <div class="flex items-center justify-between">
               <span class="font-semibold text-slate-300">Minimum Guaranteed Items</span>
               <div class="flex items-center gap-1.5">
-                <input type="number" id="minItemsInput" min="0" max="10" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <input type="number" id="minItemsInput" min="0" max="4" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
               </div>
             </div>
-            <input type="range" id="minItemsSlider" min="0" max="10" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="minItemsSlider" min="0" max="4" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
           </div>
         </div>
       </section>
@@ -476,7 +476,7 @@ cd runtime/addons/installed/dune-airdrop-addon/daemon/
 docker build -t airdrop-daemon .
 
 # 3. Start the background container (Note: You may need --group-add to allow docker socket access)
-docker rm -f airdrop-daemon
+docker rm -f airdrop-daemon 2>/dev/null || true
 docker run -d \
   --name airdrop-daemon \
   --network host \

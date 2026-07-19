@@ -7,6 +7,13 @@ DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.player_state;
 DROP TRIGGER IF EXISTS trg_notify_airdrop ON dune.bot_pending_deliveries;
 
 -- 2. Remove Functions
+DROP FUNCTION IF EXISTS dune.trg_track_playtime_v2();
+DROP FUNCTION IF EXISTS dune.fn_check_daily_weekly_rewards_v2(BIGINT, BIGINT);
+DROP FUNCTION IF EXISTS dune.fn_deliver_playtime_airdrops_v2(BIGINT, BIGINT);
+DROP FUNCTION IF EXISTS dune.fn_roll_playtime_reward_v2(BIGINT, BIGINT);
+DROP FUNCTION IF EXISTS dune.fn_queue_reward_roll_v2(BIGINT, INT, NUMERIC, TEXT);
+DROP FUNCTION IF EXISTS dune.fn_get_pawn_tier_v2(BIGINT);
+DROP FUNCTION IF EXISTS dune.trg_notify_pending_delivery_v2();
 DROP FUNCTION IF EXISTS dune.trg_track_playtime();
 DROP FUNCTION IF EXISTS dune.fn_check_daily_weekly_rewards(BIGINT, BIGINT);
 DROP FUNCTION IF EXISTS dune.fn_deliver_playtime_airdrops(BIGINT, BIGINT);
@@ -22,6 +29,7 @@ DELETE FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
 DELETE FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy';
 DELETE FROM dune.discord_bot_config WHERE config_key = 'daemon_heartbeat';
 DROP TABLE IF EXISTS dune.bot_pending_deliveries;
+DROP TABLE IF EXISTS dune.bot_delivery_receipts;
 DROP TABLE IF EXISTS dune.bot_active_playtime;
 
 SELECT 'Arrakis Playtime Airdrop database successfully cleaned up!' AS status;

@@ -38,7 +38,22 @@ function clearStoredGrantState(storage) {
 }
 
 function computePayloadHash(payload) {
-  return `${payload.playerId}:${payload.itemId}:${payload.quantity}:${payload.quality}:${payload.containerId}`;
+  return JSON.stringify([
+    payload.playerId,
+    payload.itemId,
+    payload.quantity,
+    payload.quality,
+    payload.containerId
+  ]);
+}
+
+function isAmbiguousBridgeError(error) {
+  const message = String(error && error.message ? error.message : error || '').toLowerCase();
+  return message.includes('timed out') ||
+    message.includes('timeout') ||
+    message.includes('network') ||
+    message.includes('failed to fetch') ||
+    message.includes('delivery outcome uncertain');
 }
 
 function determineActionAndState(currentState, newPayload, cryptoObj) {
@@ -99,6 +114,7 @@ if (typeof module !== 'undefined') {
     computePayloadHash,
     determineActionAndState,
     handleBridgeReceipt,
-    handlePermanentRejection
+    handlePermanentRejection,
+    isAmbiguousBridgeError
   };
 }

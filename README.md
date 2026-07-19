@@ -24,7 +24,7 @@ From the root of your Dune server repository, run:
 ```bash
 cd runtime/addons/installed/dune-airdrop-addon/daemon
 docker build -t airdrop-daemon .
-docker rm -f airdrop-daemon
+docker rm -f airdrop-daemon 2>/dev/null || true
 # Note: You may need to add --group-add <docker-gid> to allow the non-root container user to access the docker socket
 docker run -d \
   --name airdrop-daemon \
@@ -38,14 +38,15 @@ docker run -d \
 ```
 
 **Why does this require Docker socket access?**
-The current Dune Console Addon API does not support native item delivery. To automate airdrops, this companion daemon executes RCON commands (`dune admin grant-item-id`) against the running game container. We mitigate this risk by running the daemon as a non-root user and strictly mounting only the required scripts and `.env` as read-only (`:ro`).
+The current Dune Console Addon API does not support unattended native item delivery. To automate airdrops, this companion daemon executes `dune admin grant-item-id` against the running game container. The daemon runs as a non-root user and mounts the scripts and `.env` read-only. Be aware that a read-only Docker socket mount still permits sensitive Docker API operations; only run the maintained image on a trusted host.
 
 ### Update the Daemon
 If you update the addon in RedBlink, you should rebuild the daemon image:
 ```bash
 cd runtime/addons/installed/dune-airdrop-addon/daemon
 docker build -t airdrop-daemon .
-docker restart airdrop-daemon
+docker rm -f airdrop-daemon 2>/dev/null || true
+# Repeat the docker run command from "Start the Daemon" so the new image is used.
 ```
 
 ### View Logs
@@ -53,8 +54,8 @@ docker restart airdrop-daemon
 docker logs -f airdrop-daemon
 ```
 
-### Health Check
-Verify the container is running and healthy:
+### Container Status
+Verify the container is running:
 ```bash
 docker ps | grep airdrop-daemon
 ```
