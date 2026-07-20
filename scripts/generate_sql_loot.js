@@ -174,7 +174,7 @@ let sqlOutput = `-- ==========================================
 -- DO NOT EDIT THIS BLOCK MANUALLY
 -- ==========================================\n\n`;
 
-sqlOutput += `CREATE TABLE IF NOT EXISTS dune.airdrop_loot_tables (
+sqlOutput += `CREATE TABLE IF NOT EXISTS dune_airdrop.loot_tables (
   tier INT,
   category TEXT,
   template_id TEXT,
@@ -182,7 +182,7 @@ sqlOutput += `CREATE TABLE IF NOT EXISTS dune.airdrop_loot_tables (
   UNIQUE(tier, category, template_id)
 );\n\n`;
 
-sqlOutput += `INSERT INTO dune.airdrop_loot_tables (tier, category, template_id, weight) VALUES\n`;
+sqlOutput += `INSERT INTO dune_airdrop.loot_tables (tier, category, template_id, weight) VALUES\n`;
 
 const valuesList = [];
 

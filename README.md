@@ -13,7 +13,9 @@ A powerful, customizable, and automated playtime tracking and rewards system for
 ## 1. Installation
 
 1. Copy the `dune-airdrop-addon` folder into your `runtime/addons/installed/` directory.
-2. In the RedBlink UI, click **INIT SCHEMA**. Wait for it to complete.
+2. Stop the battlegroup so setup can safely replace the player-state trigger.
+3. In the RedBlink UI, click **INIT SCHEMA** and wait for it to complete.
+4. Start the battlegroup again.
 
 ## 2. Running the Daemon
 

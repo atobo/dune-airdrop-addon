@@ -45,11 +45,11 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
     request: async (action, payload) => {
       queriesReceived.push({ action, payload });
       if (action === 'database.query') {
-        if (payload.query.includes("to_regclass('dune.airdrop_config')")) {
+        if (payload.query.includes("to_regclass('dune_airdrop.config')")) {
           return { rows: [{
-            config_table: 'dune.airdrop_config',
-            playtime_table: 'dune.airdrop_active_playtime',
-            queue_table: 'dune.airdrop_pending_deliveries'
+            config_table: 'dune_airdrop.config',
+            playtime_table: 'dune_airdrop.active_playtime',
+            queue_table: 'dune_airdrop.pending_deliveries'
           }] };
         }
         if (payload.query.includes('ILIKE \'%container%\'')) {
@@ -147,7 +147,7 @@ test('UI Integration - Clean install prompts for schema initialization', async (
   window.DuneAddon = {
     request: async (action, payload) => {
       queries.push({ action, payload });
-      if (action === 'database.query' && payload.query.includes("to_regclass('dune.airdrop_config')")) {
+      if (action === 'database.query' && payload.query.includes("to_regclass('dune_airdrop.config')")) {
         return { rows: [{ config_table: null, playtime_table: null, queue_table: null }] };
       }
       return { rows: [] };
@@ -161,7 +161,7 @@ test('UI Integration - Clean install prompts for schema initialization', async (
   );
 
   assert.equal(window.document.getElementById('connectionStatusBadge').textContent, 'Setup Required');
-  assert.ok(queries.some((entry) => entry.payload.query.includes("to_regclass('dune.airdrop_config')")));
+  assert.ok(queries.some((entry) => entry.payload.query.includes("to_regclass('dune_airdrop.config')")));
   assert.ok(!queries.some((entry) => entry.payload.query.includes("config_key = 'airdrop_multipliers'")));
   assert.equal(window.__fetchDiagnosticsInterval, undefined);
   assert.equal(window.__fetchPendingInterval, undefined);
@@ -195,11 +195,11 @@ test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
   window.DuneAddon = {
     request: async (action, payload) => {
       if (action === 'database.query') {
-        if (payload.query.includes("to_regclass('dune.airdrop_config')")) {
+        if (payload.query.includes("to_regclass('dune_airdrop.config')")) {
           return { rows: [{
-            config_table: 'dune.airdrop_config',
-            playtime_table: 'dune.airdrop_active_playtime',
-            queue_table: 'dune.airdrop_pending_deliveries'
+            config_table: 'dune_airdrop.config',
+            playtime_table: 'dune_airdrop.active_playtime',
+            queue_table: 'dune_airdrop.pending_deliveries'
           }] };
         }
         if (payload.query.includes("ILIKE '%container%'")) {

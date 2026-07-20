@@ -48,17 +48,17 @@ async function executeDelivery(row) {
   const client = await pool.connect();
   try {
     // 1. Check Receipt Table FIRST
-    const receiptCheck = await client.query(`SELECT status FROM dune.airdrop_delivery_receipts WHERE request_id = $1`, [row.request_id]);
+    const receiptCheck = await client.query(`SELECT status FROM dune_airdrop.delivery_receipts WHERE request_id = $1`, [row.request_id]);
     if (receiptCheck.rows.length > 0) {
       const status = receiptCheck.rows[0].status;
       if (status === 'SUCCESS') {
         console.log(`Receipt already exists and is SUCCESS for request_id ${row.request_id}. Marking as applied.`);
-        await client.query(`UPDATE dune.airdrop_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+        await client.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
         return;
       } else if (status === 'PENDING' || status === 'UNCERTAIN') {
         console.warn(`Request ID ${row.request_id} has status ${status}. The daemon previously crashed during the execution boundary! Transitioning to UNCERTAIN and locking delivery to prevent double-grants.`);
-        await client.query(`UPDATE dune.airdrop_delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
-        await client.query(`UPDATE dune.airdrop_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+        await client.query(`UPDATE dune_airdrop.delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
+        await client.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
         return;
       }
     }
@@ -73,7 +73,7 @@ async function executeDelivery(row) {
   try {
     // 2. Persist PENDING receipt BEFORE external execution boundary
     await updateClient.query(`
-      INSERT INTO dune.airdrop_delivery_receipts (request_id, account_id, template_id, quantity, status)
+      INSERT INTO dune_airdrop.delivery_receipts (request_id, account_id, template_id, quantity, status)
       VALUES ($1, $2, $3, $4, 'PENDING')
       ON CONFLICT (request_id) DO UPDATE SET status = 'PENDING'
     `, [row.request_id, playerId, itemId, quantity]);
@@ -88,17 +88,17 @@ async function executeDelivery(row) {
     const outcome = classifyGrantResult(result);
     if (outcome === 'SUCCESS') {
       console.log(`Successfully dropped item! Updating receipt to SUCCESS and marking as applied.`);
-      await updateClient.query(`UPDATE dune.airdrop_delivery_receipts SET status = 'SUCCESS' WHERE request_id = $1`, [row.request_id]);
-      await updateClient.query(`UPDATE dune.airdrop_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+      await updateClient.query(`UPDATE dune_airdrop.delivery_receipts SET status = 'SUCCESS' WHERE request_id = $1`, [row.request_id]);
+      await updateClient.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     } else if (outcome === 'UNCERTAIN') {
       console.warn(`Item command was published but inventory verification did not confirm delivery ${row.id}. Locking it as UNCERTAIN to prevent a duplicate grant.`);
-      await updateClient.query(`UPDATE dune.airdrop_delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
-      await updateClient.query(`UPDATE dune.airdrop_pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
+      await updateClient.query(`UPDATE dune_airdrop.delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
+      await updateClient.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
     } else {
       console.error(`Failed to drop item for delivery ID ${row.id} (Player might be offline?):`, result.error || result.stderr || result.stdout);
       console.log(`Removing PENDING receipt to allow retry queueing for delivery ID ${row.id}.`);
-      await updateClient.query(`DELETE FROM dune.airdrop_delivery_receipts WHERE request_id = $1`, [row.request_id]);
-      await updateClient.query(`UPDATE dune.airdrop_pending_deliveries SET locked_at = NULL WHERE id = $1`, [row.id]);
+      await updateClient.query(`DELETE FROM dune_airdrop.delivery_receipts WHERE request_id = $1`, [row.request_id]);
+      await updateClient.query(`UPDATE dune_airdrop.pending_deliveries SET locked_at = NULL WHERE id = $1`, [row.id]);
     }
   } catch (err) {
     console.error("Error updating delivery status:", err);
@@ -127,7 +127,7 @@ async function checkPendingDeliveries() {
   const client = await pool.connect();
   try {
     // Check if the daemon is enabled in the configuration
-    const configRes = await client.query(`SELECT config_value FROM dune.airdrop_config WHERE config_key = 'airdrop_multipliers'`);
+    const configRes = await client.query(`SELECT config_value FROM dune_airdrop.config WHERE config_key = 'airdrop_multipliers'`);
     if (configRes.rows.length > 0) {
       const config = configRes.rows[0].config_value;
       if (config.daemon_enabled === false) {
@@ -138,18 +138,18 @@ async function checkPendingDeliveries() {
     while (true) {
       const res = await client.query(`
         WITH claim AS (
-          SELECT id FROM dune.airdrop_pending_deliveries
+          SELECT id FROM dune_airdrop.pending_deliveries
           WHERE is_applied = false
             AND created_at < NOW() - INTERVAL '60 seconds'
             AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '300 seconds')
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        UPDATE dune.airdrop_pending_deliveries
+        UPDATE dune_airdrop.pending_deliveries
         SET locked_at = NOW()
         FROM claim
-        WHERE dune.airdrop_pending_deliveries.id = claim.id
-        RETURNING dune.airdrop_pending_deliveries.*;
+        WHERE dune_airdrop.pending_deliveries.id = claim.id
+        RETURNING dune_airdrop.pending_deliveries.*;
       `);
 
       if (res.rows.length === 0) {
@@ -210,7 +210,7 @@ async function start() {
     const hbClient = await pool.connect();
     try {
       await hbClient.query(`
-        INSERT INTO dune.airdrop_config (config_key, config_value)
+        INSERT INTO dune_airdrop.config (config_key, config_value)
         VALUES ('daemon_heartbeat', jsonb_build_object('last_ping', NOW()))
         ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value;
       `);

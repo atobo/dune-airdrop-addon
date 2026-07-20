@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!confirmed) return;
       try {
         await window.DuneAddon.request("database.execute", {
-          query: 'DELETE FROM dune.airdrop_pending_deliveries WHERE is_applied = false'
+          query: 'DELETE FROM dune_airdrop.pending_deliveries WHERE is_applied = false'
         });
         showToast('Pending airdrop queue cleared!', 'success');
         fetchPendingAirdrops();
@@ -389,9 +389,9 @@ async function isAirdropSchemaReady() {
   try {
     const rawResult = await window.DuneAddon.request("database.query", {
       query: `SELECT
-                to_regclass('dune.airdrop_config')::text AS config_table,
-                to_regclass('dune.airdrop_active_playtime')::text AS playtime_table,
-                to_regclass('dune.airdrop_pending_deliveries')::text AS queue_table`
+                to_regclass('dune_airdrop.config')::text AS config_table,
+                to_regclass('dune_airdrop.active_playtime')::text AS playtime_table,
+                to_regclass('dune_airdrop.pending_deliveries')::text AS queue_table`
     });
     const rows = rawResult.rows || rawResult || [];
     const row = rows[0] || {};
@@ -405,7 +405,7 @@ async function isAirdropSchemaReady() {
 async function loadSettings() {
   try {
     const rawRes = await window.DuneAddon.request("database.query", {
-      query: "SELECT config_value FROM dune.airdrop_config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
+      query: "SELECT config_value FROM dune_airdrop.config WHERE config_key = 'airdrop_multipliers' LIMIT 1"
     });
     const res = rawRes.rows || rawRes || [];
 
@@ -455,7 +455,7 @@ async function loadSettings() {
 
 
     const rawResEcon = await window.DuneAddon.request("database.query", {
-      query: "SELECT config_value FROM dune.airdrop_config WHERE config_key = 'airdrop_economy' LIMIT 1"
+      query: "SELECT config_value FROM dune_airdrop.config WHERE config_key = 'airdrop_economy' LIMIT 1"
     });
     const resEcon = rawResEcon.rows || rawResEcon || [];
     let econ = {
@@ -551,7 +551,7 @@ async function handleSaveAllSettings() {
 
     const escapedEconJson = JSON.stringify(econPayload).replace(/'/g, "''");
     await window.DuneAddon.request("database.execute", {
-      query: `INSERT INTO dune.airdrop_config (config_key, config_value)
+      query: `INSERT INTO dune_airdrop.config (config_key, config_value)
               VALUES ('airdrop_economy', '${escapedEconJson}'::jsonb)
               ON CONFLICT (config_key)
               DO UPDATE SET config_value = EXCLUDED.config_value`
@@ -560,7 +560,7 @@ async function handleSaveAllSettings() {
     // 1. Save Airdrops Config
     const escapedJson = JSON.stringify(payload).replace(/'/g, "''");
     await window.DuneAddon.request("database.execute", {
-      query: `INSERT INTO dune.airdrop_config (config_key, config_value)
+      query: `INSERT INTO dune_airdrop.config (config_key, config_value)
               VALUES ('airdrop_multipliers', '${escapedJson}'::jsonb)
               ON CONFLICT (config_key)
               DO UPDATE SET config_value = EXCLUDED.config_value`
@@ -578,6 +578,12 @@ async function handleInitializeSchema() {
     return;
   }
 
+  const confirmed = window.confirm(
+    'Stop the battlegroup before initializing or upgrading Airdrop Manager. ' +
+    'This briefly replaces its player-state trigger. Continue now?'
+  );
+  if (!confirmed) return;
+
   try {
     showToast('Loading SQL schema from addon package...', 'success');
     const response = await fetch('../setup_playtime_airdrops.sql');
@@ -593,7 +599,12 @@ async function handleInitializeSchema() {
     showToast('Database schema and triggers initialized successfully. Reloading...', 'success');
     window.setTimeout(() => window.location.reload(), 500);
   } catch (err) {
-    showToast(`Schema init failed: ${err.message}`, 'error');
+    const message = String(err?.message || err);
+    if (/lock timeout|statement timeout|canceling statement/i.test(message)) {
+      showToast('Schema init could not lock the active player-state table. Stop the battlegroup, then click INIT SCHEMA again.', 'error');
+    } else {
+      showToast(`Schema init failed: ${message}`, 'error');
+    }
   }
 }
 
@@ -611,7 +622,7 @@ async function fetchDiagnostics() {
                 COALESCE(bp.weekly_login_mask, 0) AS weekly_login_mask
               FROM dune.player_state ps
               LEFT JOIN dune.actors act ON ps.player_pawn_id = act.id
-              LEFT JOIN dune.airdrop_active_playtime bp ON ps.player_pawn_id = bp.character_id::bigint
+              LEFT JOIN dune_airdrop.active_playtime bp ON ps.player_pawn_id = bp.character_id::bigint
               WHERE ps.player_pawn_id IS NOT NULL AND LOWER(ps.online_status::text) = 'online'`
     });
     const players = rawPlayers.rows || rawPlayers || [];
@@ -661,7 +672,7 @@ async function fetchPendingAirdrops() {
   try {
     const rawList = await window.DuneAddon.request("database.query", {
       query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size
-              FROM dune.airdrop_pending_deliveries bpd
+              FROM dune_airdrop.pending_deliveries bpd
               LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
               WHERE bpd.is_applied = false
               ORDER BY bpd.created_at DESC`
@@ -828,7 +839,7 @@ window.testResetDaily = async function(characterId) {
     const safeCharacterId = String(characterId);
     if (!/^[0-9]+$/.test(safeCharacterId)) throw new Error('Invalid character ID');
     await window.DuneAddon.request("database.execute", {
-      query: `UPDATE dune.airdrop_active_playtime
+      query: `UPDATE dune_airdrop.active_playtime
               SET last_login_date = NULL, consecutive_days = 0
               WHERE character_id = ${safeCharacterId}::bigint`
     });
@@ -845,7 +856,7 @@ window.testSetWeekly = async function(characterId) {
     if (!/^[0-9]+$/.test(safeCharacterId)) throw new Error('Invalid character ID');
     // 31 in binary is 11111 (5 days)
     await window.DuneAddon.request("database.execute", {
-      query: `UPDATE dune.airdrop_active_playtime
+      query: `UPDATE dune_airdrop.active_playtime
               SET weekly_login_mask = 31, last_weekly_claimed_at = NULL
               WHERE character_id = ${safeCharacterId}::bigint`
     });

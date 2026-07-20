@@ -23,11 +23,11 @@ test('reward minimum is bounded and guarded against an endless loop', () => {
   assert.match(sql, /v_minimum_attempts < 32/);
 });
 
-test('uninstall removes current v2 functions and dedicated addon state', () => {
+test('uninstall removes the isolated schema and game trigger', () => {
   const sql = fs.readFileSync(path.join(root, 'uninstall_playtime_airdrops.sql'), 'utf8');
-  assert.match(sql, /DROP FUNCTION IF EXISTS dune\.trg_track_playtime_v2\(\)/);
-  assert.match(sql, /DROP TABLE IF EXISTS dune\.airdrop_delivery_receipts/);
-  assert.match(sql, /DROP TABLE IF EXISTS dune\.airdrop_config/);
+  assert.match(sql, /DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune\.encrypted_player_state/);
+  assert.match(sql, /DROP SCHEMA IF EXISTS dune_airdrop CASCADE/);
+  assert.doesNotMatch(sql, /DROP (?:FUNCTION|TABLE) IF EXISTS dune\.airdrop_/);
 });
 
 test('addon database objects use only the dedicated airdrop namespace', () => {
