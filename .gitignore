@@ -1,0 +1,5 @@
+node_modules/
+*.deb
+tailwindcss.exe
+tailwind.config.js
+web/input.css
