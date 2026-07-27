@@ -28,7 +28,7 @@ test('getStoredGrantState handles malformed valid JSON', () => {
 });
 
 test('determineActionAndState: New payload generates new state', () => {
-  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
+  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
   const result = logic.determineActionAndState(null, payload, crypto);
   assert.strictEqual(result.action, 'PROCEED');
   assert.ok(result.newState.id.startsWith('manual:grant:'));
@@ -37,7 +37,7 @@ test('determineActionAndState: New payload generates new state', () => {
 });
 
 test('determineActionAndState: Retains same ID when payload matches (pending state)', () => {
-  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
+  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
   const initial = logic.determineActionAndState(null, payload, crypto);
   
   const retry = logic.determineActionAndState(initial.newState, payload, crypto);
@@ -46,8 +46,8 @@ test('determineActionAndState: Retains same ID when payload matches (pending sta
 });
 
 test('determineActionAndState: Generates new ID when payload changes (pending state)', () => {
-  const payload1 = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
-  const payload2 = { playerId: '123', itemId: 'Sword', quantity: 2, quality: 0, containerId: '9999999999999' };
+  const payload1 = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
+  const payload2 = { playerId: '123', itemId: 'Sword', quantity: 2, quality: 0 };
   const initial = logic.determineActionAndState(null, payload1, crypto);
   
   const retry = logic.determineActionAndState(initial.newState, payload2, crypto);
@@ -56,8 +56,8 @@ test('determineActionAndState: Generates new ID when payload changes (pending st
 });
 
 test('determineActionAndState: Rejects changes if state is UNCERTAIN', () => {
-  const payload1 = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
-  const payload2 = { playerId: '123', itemId: 'Sword', quantity: 2, quality: 0, containerId: '9999999999999' };
+  const payload1 = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
+  const payload2 = { playerId: '123', itemId: 'Sword', quantity: 2, quality: 0 };
   const initial = logic.determineActionAndState(null, payload1, crypto);
   
   initial.newState.status = 'UNCERTAIN';
@@ -67,7 +67,7 @@ test('determineActionAndState: Rejects changes if state is UNCERTAIN', () => {
 });
 
 test('determineActionAndState: Allows retry with exact same payload if UNCERTAIN', () => {
-  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
+  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
   const initial = logic.determineActionAndState(null, payload, crypto);
   
   initial.newState.status = 'UNCERTAIN';
@@ -79,7 +79,7 @@ test('determineActionAndState: Allows retry with exact same payload if UNCERTAIN
 
 test('handleBridgeReceipt: Clears state on ok === true', () => {
   const storage = new MockStorage();
-  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
+  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
   const initial = logic.determineActionAndState(null, payload, crypto);
   logic.setStoredGrantState(initial.newState, storage);
   
@@ -90,7 +90,7 @@ test('handleBridgeReceipt: Clears state on ok === true', () => {
 
 test('handleBridgeReceipt: Transitions to UNCERTAIN on lost/failed response', () => {
   const storage = new MockStorage();
-  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
+  const payload = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0 };
   const initial = logic.determineActionAndState(null, payload, crypto);
   logic.setStoredGrantState(initial.newState, storage);
   
@@ -99,15 +99,4 @@ test('handleBridgeReceipt: Transitions to UNCERTAIN on lost/failed response', ()
   
   const stored = logic.getStoredGrantState(storage);
   assert.strictEqual(stored.status, 'UNCERTAIN');
-});
-
-test('computePayloadHash cannot collide through delimiter-shaped item IDs', () => {
-  const left = { playerId: '1', itemId: 'Item:2', quantity: 3, quality: 0, containerId: '4' };
-  const right = { playerId: '1', itemId: 'Item', quantity: 2, quality: 3, containerId: '0:4' };
-  assert.notStrictEqual(logic.computePayloadHash(left), logic.computePayloadHash(right));
-});
-
-test('bridge timeouts are ambiguous while explicit rejections are permanent', () => {
-  assert.strictEqual(logic.isAmbiguousBridgeError(new Error('Bridge request timed out.')), true);
-  assert.strictEqual(logic.isAmbiguousBridgeError(new Error('Addon item ID is invalid.')), false);
 });

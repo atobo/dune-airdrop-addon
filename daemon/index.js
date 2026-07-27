@@ -4,172 +4,330 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { classifyGrantResult } from './deliveryResult.js';
-import { buildDatabaseConfig, parseEnvFile } from './databaseConfig.js';
+import crypto from 'crypto';
 
 const execFileAsync = promisify(execFile);
 
-// Resolve the root of the Dune Docker Console by taking it from env or defaulting to /repo
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const duneDockerRoot = process.env.DUNE_DOCKER_ROOT || '/repo';
 
-let envFileValues = {};
+let dbPassword = "dune";
 try {
   const envPath = path.resolve(duneDockerRoot, '.env');
-  envFileValues = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
+  const envFile = fs.readFileSync(envPath, 'utf8');
+  const match = envFile.match(/^DUNE_DB_PASSWORD=(.*)$/m);
+  if (match) dbPassword = match[1].trim();
 } catch (e) {
-  console.warn("Could not read .env file; using environment variables and database defaults.");
+  console.error("Could not read .env file, using default password.");
 }
 
-const databaseConfig = buildDatabaseConfig(process.env, envFileValues);
-const pool = new pg.Pool(databaseConfig.pool);
+const DB_URL = process.env.DATABASE_URL || `postgres://dune:${dbPassword}@127.0.0.1:15432/dune`;
 
-async function runCommand(executable, args) {
+const pool = new pg.Pool({
+  connectionString: DB_URL,
+  connectionTimeoutMillis: 2000,
+});
+
+async function runCommand(executable, args, timeoutMs = 180000) {
   try {
-    const { stdout, stderr } = await execFileAsync(executable, args);
+    const { stdout, stderr } = await execFileAsync(executable, args, { timeout: timeoutMs, killSignal: 'SIGKILL' });
     return { ok: true, stdout, stderr };
   } catch (err) {
-    return { ok: false, error: err.message, stdout: err.stdout, stderr: err.stderr };
+    if (err.killed && err.signal === 'SIGKILL') {
+      return { ok: false, error: 'TIMEOUT', stdout: err.stdout || '', stderr: err.stderr || '' };
+    }
+    return { ok: false, error: err.message || 'UNKNOWN_ERROR', stdout: err.stdout || '', stderr: err.stderr || '' };
   }
 }
 
-let isProcessing = false;
+function classifyError(errorStr, stdout, stderr) {
+  if (errorStr === 'TIMEOUT') return 'TIMEOUT';
+  
+  const combinedOut = (stdout + ' ' + stderr).toLowerCase();
+  
+  if (combinedOut.includes("player is offline") || combinedOut.includes("cannot find player") || combinedOut.includes("no player by account id")) {
+    return 'RETRY_OFFLINE';
+  }
+  
+  if (combinedOut.includes("invalid item") || combinedOut.includes("cannot grant") || combinedOut.includes("validation failed")) {
+    return 'VALIDATION_FAILED';
+  }
+  
+  if (combinedOut.includes("verification failed") || combinedOut.includes("failed to verify")) {
+    return 'VERIFICATION_FAILED';
+  }
 
-async function executeDelivery(row) {
+  return 'UNKNOWN_OUTPUT';
+}
 
-  console.log(`Executing delivery ID ${row.id} for account ${row.account_id}: ${row.stack_size}x ${row.template_id} (Quality: ${row.quality_level})`);
-
-  const playerId = row.account_id;
-  const itemId = row.template_id;
-  const quantity = row.stack_size;
-  const quality = row.quality_level || 0;
-
+async function finalizeTransactionB(delivery, result) {
   const client = await pool.connect();
   try {
-    // 1. Check Receipt Table FIRST
-    const receiptCheck = await client.query(`SELECT status FROM dune_airdrop.delivery_receipts WHERE request_id = $1`, [row.request_id]);
-    if (receiptCheck.rows.length > 0) {
-      const status = receiptCheck.rows[0].status;
-      if (status === 'SUCCESS') {
-        console.log(`Receipt already exists and is SUCCESS for request_id ${row.request_id}. Marking as applied.`);
-        await client.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
-        return;
-      } else if (status === 'PENDING' || status === 'UNCERTAIN') {
-        console.warn(`Request ID ${row.request_id} has status ${status}. The daemon previously crashed during the execution boundary! Transitioning to UNCERTAIN and locking delivery to prevent double-grants.`);
-        await client.query(`UPDATE dune_airdrop.delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
-        await client.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
-        return;
+    await client.query('BEGIN');
+    
+    const check = await client.query(`
+      SELECT id FROM dune.bot_pending_deliveries 
+      WHERE id = $1 AND lease_token = $2 FOR UPDATE
+    `, [delivery.id, delivery.lease_token]);
+    
+    if (check.rows.length === 0) {
+      console.warn(`[Transaction B] Lost lease for delivery ${delivery.id}. Performing no mutation.`);
+      await client.query('ROLLBACK');
+      return;
+    }
+    
+    if (result.ok) {
+      await client.query(`UPDATE dune.bot_delivery_receipts SET status = 'SUCCESS', status_updated_at = NOW() WHERE request_id = $1`, [delivery.request_id]);
+      await client.query(`
+        UPDATE dune.bot_pending_deliveries 
+        SET is_applied = true, lease_token = NULL, locked_at = NULL, last_failure_code = NULL, last_failure_at = NULL
+        WHERE id = $1
+      `, [delivery.id]);
+    } else {
+      const code = classifyError(result.error, result.stdout, result.stderr);
+      let rawReason = (result.error + ' | ' + result.stdout + ' | ' + result.stderr).replace(/\0/g, '');
+      if (rawReason.length > 255) rawReason = rawReason.substring(0, 255);
+      
+      if (code === 'RETRY_OFFLINE') {
+        await client.query(`DELETE FROM dune.bot_delivery_receipts WHERE request_id = $1 AND status = 'PENDING'`, [delivery.request_id]);
+        await client.query(`
+          UPDATE dune.bot_pending_deliveries 
+          SET offline_deferrals = offline_deferrals + 1,
+              next_eligibility_check_at = NOW() + LEAST(INTERVAL '5 minutes', INTERVAL '1 minute' * POWER(3, LEAST(offline_deferrals, 2))),
+              last_failure_code = 'RETRY_OFFLINE',
+              last_failure_at = NOW(),
+              lease_token = NULL,
+              locked_at = NULL
+          WHERE id = $1
+        `, [delivery.id]);
+      } else if (code === 'VALIDATION_FAILED') {
+        await client.query(`UPDATE dune.bot_delivery_receipts SET status = 'FAILED', status_updated_at = NOW(), failure_reason = $2 WHERE request_id = $1`, [delivery.request_id, rawReason]);
+        await client.query(`
+          UPDATE dune.bot_pending_deliveries 
+          SET is_applied = true, lease_token = NULL, locked_at = NULL, last_failure_code = $2, last_failure_at = NOW()
+          WHERE id = $1
+        `, [delivery.id, code]);
+      } else {
+        await client.query(`UPDATE dune.bot_delivery_receipts SET status = 'UNCERTAIN', status_updated_at = NOW(), failure_reason = $2 WHERE request_id = $1`, [delivery.request_id, rawReason]);
+        await client.query(`
+          UPDATE dune.bot_pending_deliveries 
+          SET is_applied = true, lease_token = NULL, locked_at = NULL, last_failure_code = $2, last_failure_at = NOW()
+          WHERE id = $1
+        `, [delivery.id, code]);
       }
     }
+    
+    await client.query('COMMIT');
   } catch (err) {
-    console.error("Error checking receipt:", err);
-    return;
+    console.error(`[Transaction B] Finalization error for delivery ${delivery.id}:`, err);
+    await client.query('ROLLBACK');
   } finally {
     client.release();
   }
+}
 
-  const updateClient = await pool.connect();
+async function executeDelivery(delivery) {
+  if (!/^[0-9]+$/.test(String(delivery.account_id))) {
+    console.error(`[Transaction B] Invalid account_id for delivery ${delivery.id}. Terminating.`);
+    await finalizeTransactionB(delivery, { ok: false, error: "VALIDATION_FAILED: Invalid account_id format." });
+    return;
+  }
+  
+  const executable = path.resolve(duneDockerRoot, 'runtime/scripts/dune');
+  const args = ['admin', 'grant-item-id', String(delivery.account_id), String(delivery.template_id), String(delivery.stack_size), '1', String(delivery.quality_level || 0)];
+  
+  console.log(`Executing RCON [3min timeout] for delivery ID ${delivery.id} (Account: ${delivery.account_id}): ${executable} ${args.join(' ')}`);
+  const result = await runCommand(executable, args);
+  await finalizeTransactionB(delivery, result);
+}
+
+async function processOfflineDeferrals() {
+  const client = await pool.connect();
   try {
-    // 2. Persist PENDING receipt BEFORE external execution boundary
-    await updateClient.query(`
-      INSERT INTO dune_airdrop.delivery_receipts (request_id, account_id, template_id, quantity, status)
-      VALUES ($1, $2, $3, $4, 'PENDING')
-      ON CONFLICT (request_id) DO UPDATE SET status = 'PENDING'
-    `, [row.request_id, playerId, itemId, quantity]);
-
-    // Execute the native dune CLI command to trigger the RCON item spawn exactly like Redblink does
-    const executable = path.resolve(duneDockerRoot, 'runtime/scripts/dune');
-    const args = ['admin', 'grant-item-id', String(playerId), String(itemId), String(quantity), '1', String(quality)];
-
-    console.log(`Executing RCON: ${executable} ${args.join(' ')}`);
-    const result = await runCommand(executable, args);
-
-    const outcome = classifyGrantResult(result);
-    if (outcome === 'SUCCESS') {
-      console.log(`Successfully dropped item! Updating receipt to SUCCESS and marking as applied.`);
-      await updateClient.query(`UPDATE dune_airdrop.delivery_receipts SET status = 'SUCCESS' WHERE request_id = $1`, [row.request_id]);
-      await updateClient.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
-    } else if (outcome === 'UNCERTAIN') {
-      console.warn(`Item command was published but inventory verification did not confirm delivery ${row.id}. Locking it as UNCERTAIN to prevent a duplicate grant.`);
-      await updateClient.query(`UPDATE dune_airdrop.delivery_receipts SET status = 'UNCERTAIN' WHERE request_id = $1`, [row.request_id]);
-      await updateClient.query(`UPDATE dune_airdrop.pending_deliveries SET is_applied = true WHERE id = $1`, [row.id]);
-    } else {
-      console.error(`Failed to drop item for delivery ID ${row.id} (Player might be offline?):`, result.error || result.stderr || result.stdout);
-      console.log(`Removing PENDING receipt to allow retry queueing for delivery ID ${row.id}.`);
-      await updateClient.query(`DELETE FROM dune_airdrop.delivery_receipts WHERE request_id = $1`, [row.request_id]);
-      await updateClient.query(`UPDATE dune_airdrop.pending_deliveries SET locked_at = NULL WHERE id = $1`, [row.id]);
+    while (true) {
+      await client.query('BEGIN');
+      const res = await client.query(`
+        WITH claim AS (
+          SELECT pending.id 
+          FROM dune.bot_pending_deliveries pending
+          WHERE pending.is_applied = false 
+            AND pending.lease_token IS NULL 
+            AND pending.created_at <= NOW() - INTERVAL '60 seconds'
+            AND (pending.next_eligibility_check_at IS NULL OR pending.next_eligibility_check_at <= NOW())
+            AND NOT EXISTS (
+              SELECT 1 FROM dune.player_state ps 
+              WHERE ps.account_id = pending.account_id AND LOWER(ps.online_status::text) = 'online'
+            )
+          ORDER BY pending.next_eligibility_check_at ASC NULLS FIRST, pending.created_at ASC, pending.id ASC
+          FOR UPDATE SKIP LOCKED LIMIT 10
+        )
+        UPDATE dune.bot_pending_deliveries 
+        SET offline_deferrals = offline_deferrals + 1,
+            next_eligibility_check_at = NOW() + LEAST(INTERVAL '5 minutes', INTERVAL '1 minute' * POWER(3, LEAST(offline_deferrals, 2))),
+            last_failure_code = 'OFFLINE_WAIT',
+            last_failure_at = NOW()
+        FROM claim WHERE dune.bot_pending_deliveries.id = claim.id
+        RETURNING dune.bot_pending_deliveries.*;
+      `);
+      await client.query('COMMIT');
+      if (res.rows.length === 0) break;
     }
   } catch (err) {
-    console.error("Error updating delivery status:", err);
+    if (err.message.includes("relation \"dune.player_state\" does not exist")) {
+      // Ignore if table does not exist yet during migrations
+    } else {
+      console.error("Error processing offline deferrals:", err);
+    }
+    await client.query('ROLLBACK');
   } finally {
-    updateClient.release();
+    client.release();
   }
 }
 
-async function processDelivery(row) {
-  // Wait 60 seconds from the time the delivery was created so players can load in
-  const ageMs = Date.now() - new Date(row.created_at).getTime();
-  const delayMs = Math.max(0, 60000 - ageMs);
+async function recoverLeases() {
+  const client = await pool.connect();
+  try {
+    while (true) {
+      await client.query('BEGIN');
+      const res = await client.query(`
+        SELECT id, request_id, account_id, template_id, stack_size, quality_level 
+        FROM dune.bot_pending_deliveries
+        WHERE is_applied = false 
+          AND lease_token IS NOT NULL 
+          AND locked_at < NOW() - INTERVAL '10 minutes'
+        FOR UPDATE SKIP LOCKED LIMIT 1
+      `);
 
-  if (delayMs > 0) {
-    console.log(`Delaying delivery processing by ${Math.round(delayMs / 1000)} seconds to accommodate loading screens...`);
-    setTimeout(() => checkPendingDeliveries(), delayMs);
-  } else {
-    checkPendingDeliveries();
+      if (res.rows.length === 0) {
+        await client.query('ROLLBACK');
+        break; 
+      }
+      
+      const row = res.rows[0];
+      const receiptRes = await client.query(`SELECT status, quality_level FROM dune.bot_delivery_receipts WHERE request_id = $1 FOR UPDATE`, [row.request_id]);
+      
+      if (receiptRes.rows.length === 0) {
+        console.error(`[Lease Recovery] Missing receipt for delivery ID ${row.id}. Marking as CORRUPTED_NO_RECEIPT.`);
+        await client.query(`
+          UPDATE dune.bot_pending_deliveries 
+          SET is_applied = true, last_failure_code = 'CORRUPTED_NO_RECEIPT', last_failure_at = NOW(), lease_token = NULL, locked_at = NULL 
+          WHERE id = $1
+        `, [row.id]);
+      } else {
+        const receipt = receiptRes.rows[0];
+        if (receipt.quality_level !== row.quality_level) {
+          console.error(`[Lease Recovery] Payload mismatch for delivery ID ${row.id}.`);
+          await client.query(`
+            UPDATE dune.bot_pending_deliveries 
+            SET is_applied = true, last_failure_code = 'PAYLOAD_MISMATCH', last_failure_at = NOW(), lease_token = NULL, locked_at = NULL 
+            WHERE id = $1
+          `, [row.id]);
+        } else if (receipt.status === 'PENDING') {
+          console.log(`[Lease Recovery] Recovering abandoned PENDING delivery ID ${row.id}.`);
+          await client.query(`UPDATE dune.bot_delivery_receipts SET status = 'UNCERTAIN', status_updated_at = NOW(), failure_reason = 'ABANDONED_PENDING' WHERE request_id = $1`, [row.request_id]);
+          await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true, lease_token = NULL, locked_at = NULL WHERE id = $1`, [row.id]);
+        } else {
+          console.log(`[Lease Recovery] Synchronizing terminal receipt state for delivery ID ${row.id}.`);
+          await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true, lease_token = NULL, locked_at = NULL WHERE id = $1`, [row.id]);
+        }
+      }
+      await client.query('COMMIT');
+    }
+  } catch (err) {
+    console.error("Error during lease recovery:", err);
+    await client.query('ROLLBACK');
+  } finally {
+    client.release();
   }
 }
 
 async function checkPendingDeliveries() {
-  if (isProcessing) return;
-  isProcessing = true;
-
   const client = await pool.connect();
   try {
-    // Check if the daemon is enabled in the configuration
-    const configRes = await client.query(`SELECT config_value FROM dune_airdrop.config WHERE config_key = 'airdrop_multipliers'`);
-    if (configRes.rows.length > 0) {
-      const config = configRes.rows[0].config_value;
-      if (config.daemon_enabled === false) {
-        return; // Daemon is disabled, skip processing
-      }
-    }
+    const configRes = await client.query(`SELECT config_value FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers'`);
+    if (configRes.rows.length > 0 && configRes.rows[0].config_value.daemon_enabled === false) return;
 
     while (true) {
-      const res = await client.query(`
+      let delivery = null;
+      let shouldDispatch = false;
+      await client.query('BEGIN');
+      
+      const leaseToken = crypto.randomUUID();
+      const claimRes = await client.query(`
         WITH claim AS (
-          SELECT id FROM dune_airdrop.pending_deliveries
-          WHERE is_applied = false
-            AND created_at < NOW() - INTERVAL '60 seconds'
-            AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '300 seconds')
-          FOR UPDATE SKIP LOCKED
-          LIMIT 1
+          SELECT pending.id 
+          FROM dune.bot_pending_deliveries pending
+          WHERE pending.is_applied = false 
+            AND pending.lease_token IS NULL 
+            AND pending.created_at <= NOW() - INTERVAL '60 seconds'
+            AND (pending.next_eligibility_check_at IS NULL OR pending.next_eligibility_check_at <= NOW())
+            AND EXISTS (
+              SELECT 1 FROM dune.player_state ps 
+              WHERE ps.account_id = pending.account_id AND LOWER(ps.online_status::text) = 'online'
+            )
+          ORDER BY pending.next_eligibility_check_at ASC NULLS FIRST, pending.created_at ASC, pending.id ASC
+          FOR UPDATE SKIP LOCKED LIMIT 1
         )
-        UPDATE dune_airdrop.pending_deliveries
-        SET locked_at = NOW()
-        FROM claim
-        WHERE dune_airdrop.pending_deliveries.id = claim.id
-        RETURNING dune_airdrop.pending_deliveries.*;
-      `);
-
-      if (res.rows.length === 0) {
-        break; // No more pending deliveries to claim
+        UPDATE dune.bot_pending_deliveries 
+        SET lease_token = $1, locked_at = NOW(), delivery_attempts = delivery_attempts + 1 
+        FROM claim 
+        WHERE dune.bot_pending_deliveries.id = claim.id 
+        RETURNING dune.bot_pending_deliveries.*;
+      `, [leaseToken]);
+      
+      if (claimRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        break;
       }
-
-      await executeDelivery(res.rows[0]);
+      
+      delivery = claimRes.rows[0];
+      
+      const checkReceiptRes = await client.query(`SELECT status, quality_level FROM dune.bot_delivery_receipts WHERE request_id = $1 FOR UPDATE`, [delivery.request_id]);
+      if (checkReceiptRes.rows.length === 0) {
+        await client.query(`INSERT INTO dune.bot_delivery_receipts (request_id, status, quality_level) VALUES ($1, 'PENDING', $2)`, [delivery.request_id, delivery.quality_level || 0]);
+        shouldDispatch = true;
+      } else {
+        const receipt = checkReceiptRes.rows[0];
+        if (receipt.quality_level !== (delivery.quality_level || 0)) {
+          await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true, last_failure_code = 'PAYLOAD_MISMATCH', last_failure_at = NOW(), lease_token = NULL, locked_at = NULL WHERE id = $1`, [delivery.id]);
+        } else if (receipt.status === 'PENDING') {
+          await client.query(`UPDATE dune.bot_delivery_receipts SET status = 'UNCERTAIN', status_updated_at = NOW(), failure_reason = 'ABANDONED_PENDING' WHERE request_id = $1`, [delivery.request_id]);
+          await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true, lease_token = NULL, locked_at = NULL WHERE id = $1`, [delivery.id]);
+        } else {
+          await client.query(`UPDATE dune.bot_pending_deliveries SET is_applied = true, lease_token = NULL, locked_at = NULL WHERE id = $1`, [delivery.id]);
+        }
+      }
+      
+      await client.query('COMMIT');
+      
+      if (shouldDispatch) {
+        executeDelivery(delivery).catch(err => console.error("Dispatch execution failed:", err));
+      }
     }
   } catch (err) {
-    console.error("Error checking for pending deliveries:", err);
+    if (err.message.includes("relation \"dune.player_state\" does not exist")) {
+      // Ignore during initial schema setup
+    } else {
+      console.error("Error checking for pending deliveries:", err);
+    }
+    await client.query('ROLLBACK');
   } finally {
     client.release();
-    isProcessing = false;
   }
+}
+
+async function loop() {
+  await recoverLeases();
+  await processOfflineDeferrals();
+  await checkPendingDeliveries();
 }
 
 async function start() {
   console.log("Starting Dune Airdrop Node.js Delivery Daemon...");
-  console.log("Attempting to connect to database at", databaseConfig.display, "...");
-
+  const sanitizedUrl = DB_URL.replace(/:([^:@]+)@/, ':***@');
+  console.log("Attempting to connect to database at", sanitizedUrl, "...");
+  
   let client;
   try {
     client = await pool.connect();
@@ -179,38 +337,33 @@ async function start() {
     process.exit(1);
   }
 
-  // Catch up on boot and start the retry loop every 30 seconds
   console.log("Starting pending delivery retry loop...");
-  checkPendingDeliveries();
-  setInterval(checkPendingDeliveries, 30000);
+  loop();
+  setInterval(loop, 30000);
 
-  // Subscribe to the new_airdrop channel
   await client.query('LISTEN new_airdrop');
   console.log("Listening for real-time airdrop events via Postgres Pub/Sub...");
 
-  // Handle incoming notifications
   client.on('notification', async (msg) => {
     try {
-      const delivery = JSON.parse(msg.payload);
       console.log("\n--- Real-Time Airdrop Event Received! ---");
-      await processDelivery(delivery);
+      // Check immediately for fast dispatch
+      checkPendingDeliveries();
     } catch (err) {
       console.error("Error parsing or processing notification:", err);
     }
   });
 
-  // Keep the connection alive and handle disconnects
   client.on('error', (err) => {
     console.error("Fatal database connection error:", err.message);
     process.exit(1);
   });
 
-  // Start the heartbeat loop every 15 seconds
   setInterval(async () => {
     const hbClient = await pool.connect();
     try {
       await hbClient.query(`
-        INSERT INTO dune_airdrop.config (config_key, config_value)
+        INSERT INTO dune.discord_bot_config (config_key, config_value) 
         VALUES ('daemon_heartbeat', jsonb_build_object('last_ping', NOW()))
         ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value;
       `);
@@ -222,13 +375,4 @@ async function start() {
   }, 15000);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  start();
-}
-
-export {
-  executeDelivery,
-  checkPendingDeliveries,
-  pool,
-  isProcessing
-};
+start();
