@@ -1,15 +1,8 @@
 -- PostgreSQL Playtime Airdrop Engine
 -- Run this SQL on your Dune Awakening self-hosted PostgreSQL database.
 
--- Keep addon-owned objects outside the game schema and under the same role
--- used by Dune Docker Console. SET ROLE also normalizes ownership when this
--- script is launched manually as the postgres administrator.
-CREATE SCHEMA IF NOT EXISTS dune_airdrop AUTHORIZATION dune;
-SET ROLE dune;
-SET LOCAL lock_timeout = '5s';
-
 -- 1. Create playtime tracking table (supports coordinates, XP, anti-AFK validation, daily and weekly streaks)
-CREATE TABLE IF NOT EXISTS dune_airdrop.active_playtime (
+CREATE TABLE IF NOT EXISTS dune.bot_active_playtime (
   character_id BIGINT PRIMARY KEY,
   active_seconds INT DEFAULT 0,
   last_xp BIGINT DEFAULT 0,
@@ -24,13 +17,12 @@ CREATE TABLE IF NOT EXISTS dune_airdrop.active_playtime (
   last_weekly_claimed_at TIMESTAMP WITH TIME ZONE
 );
 -- Migration: Ensure types and columns exist for older installations
-ALTER TABLE IF EXISTS dune_airdrop.active_playtime ALTER COLUMN character_id TYPE BIGINT USING character_id::bigint;
-ALTER TABLE IF EXISTS dune_airdrop.active_playtime ADD COLUMN IF NOT EXISTS current_week_id INT DEFAULT 0;
+ALTER TABLE IF EXISTS dune.bot_active_playtime ALTER COLUMN character_id TYPE BIGINT USING character_id::bigint;
+ALTER TABLE IF EXISTS dune.bot_active_playtime ADD COLUMN IF NOT EXISTS current_week_id INT DEFAULT 0;
 
 -- 2. Create pending deliveries queue table
-CREATE TABLE IF NOT EXISTS dune_airdrop.pending_deliveries (
+CREATE TABLE IF NOT EXISTS dune.bot_pending_deliveries (
   id SERIAL PRIMARY KEY,
-  request_id UUID DEFAULT gen_random_uuid() UNIQUE,
   account_id BIGINT NOT NULL,
   template_id TEXT NOT NULL,
   stack_size INT NOT NULL,
@@ -39,45 +31,189 @@ CREATE TABLE IF NOT EXISTS dune_airdrop.pending_deliveries (
   locked_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-ALTER TABLE IF EXISTS dune_airdrop.pending_deliveries ALTER COLUMN account_id TYPE BIGINT USING account_id::bigint;
-ALTER TABLE IF EXISTS dune_airdrop.pending_deliveries ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE IF EXISTS dune_airdrop.pending_deliveries ADD COLUMN IF NOT EXISTS request_id UUID DEFAULT gen_random_uuid() UNIQUE;
+ALTER TABLE IF EXISTS dune.bot_pending_deliveries ALTER COLUMN account_id TYPE BIGINT USING account_id::bigint;
+ALTER TABLE IF EXISTS dune.bot_pending_deliveries ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP WITH TIME ZONE;
 
--- 2.1 Create persistent delivery receipts table for idempotent grants
-CREATE TABLE IF NOT EXISTS dune_airdrop.delivery_receipts (
+-- 2.1 Backward-compatible Queue and Receipt Schema Upgrades
+CREATE TABLE IF NOT EXISTS dune.bot_delivery_receipts (
   request_id UUID PRIMARY KEY,
-  account_id BIGINT NOT NULL,
-  template_id TEXT NOT NULL,
-  quantity INT NOT NULL,
-  status TEXT DEFAULT 'SUCCESS',
-  granted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  quality_level INT NOT NULL DEFAULT 0,
+  granted_at TIMESTAMP WITH TIME ZONE,
+  status_updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  failure_reason TEXT
 );
-ALTER TABLE IF EXISTS dune_airdrop.delivery_receipts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'SUCCESS';
+
+DO $$
+BEGIN
+  -- Handle receipts quality_level migration if table already existed
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_delivery_receipts' AND column_name='quality_level') THEN
+    ALTER TABLE dune.bot_delivery_receipts ADD COLUMN quality_level INTEGER;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_delivery_receipts' AND column_name='status_updated_at') THEN
+    ALTER TABLE dune.bot_delivery_receipts ADD COLUMN status_updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    UPDATE dune.bot_delivery_receipts SET status_updated_at = NOW() WHERE status_updated_at IS NULL;
+    ALTER TABLE dune.bot_delivery_receipts ALTER COLUMN status_updated_at SET NOT NULL;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_delivery_receipts' AND column_name='failure_reason') THEN
+    ALTER TABLE dune.bot_delivery_receipts ADD COLUMN failure_reason TEXT;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  -- delivery_attempts (add -> backfill -> default -> NOT NULL)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_pending_deliveries' AND column_name='delivery_attempts') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD COLUMN delivery_attempts INTEGER;
+    UPDATE dune.bot_pending_deliveries SET delivery_attempts = 0 WHERE delivery_attempts IS NULL;
+    ALTER TABLE dune.bot_pending_deliveries ALTER COLUMN delivery_attempts SET DEFAULT 0;
+    ALTER TABLE dune.bot_pending_deliveries ALTER COLUMN delivery_attempts SET NOT NULL;
+  END IF;
+
+  -- lease_token UUID
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_pending_deliveries' AND column_name='lease_token') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD COLUMN lease_token UUID;
+  END IF;
+
+  -- offline_deferrals INTEGER
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_pending_deliveries' AND column_name='offline_deferrals') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD COLUMN offline_deferrals INTEGER;
+    UPDATE dune.bot_pending_deliveries SET offline_deferrals = 0 WHERE offline_deferrals IS NULL;
+    ALTER TABLE dune.bot_pending_deliveries ALTER COLUMN offline_deferrals SET DEFAULT 0;
+    ALTER TABLE dune.bot_pending_deliveries ALTER COLUMN offline_deferrals SET NOT NULL;
+  END IF;
+
+  -- next_eligibility_check_at TIMESTAMPTZ
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_pending_deliveries' AND column_name='next_eligibility_check_at') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD COLUMN next_eligibility_check_at TIMESTAMPTZ;
+  END IF;
+
+  -- request_id UUID (crucial for linking to receipts)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_pending_deliveries' AND column_name='request_id') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD COLUMN request_id UUID;
+    UPDATE dune.bot_pending_deliveries SET request_id = gen_random_uuid() WHERE request_id IS NULL;
+    
+    -- In postgres UUID generates randomly, so they are practically unique.
+    ALTER TABLE dune.bot_pending_deliveries ADD CONSTRAINT bot_pending_deliveries_request_id_key UNIQUE (request_id);
+  END IF;
+
+  -- last_failure_code TEXT
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_pending_deliveries' AND column_name='last_failure_code') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD COLUMN last_failure_code TEXT;
+  END IF;
+
+  -- last_failure_at TIMESTAMPTZ
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dune' AND table_name='bot_pending_deliveries' AND column_name='last_failure_at') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD COLUMN last_failure_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+-- Add constraints
+DO $$
+BEGIN
+  -- Normalize legacy failure code values if they existed
+  UPDATE dune.bot_pending_deliveries SET last_failure_code = 'UNCERTAIN' WHERE last_failure_code NOT IN ('OFFLINE_WAIT', 'RETRY_OFFLINE', 'TIMEOUT', 'INTERRUPTED', 'VALIDATION_FAILED', 'PAYLOAD_MISMATCH', 'ABANDONED_PENDING', 'CORRUPTED_NO_RECEIPT', 'UNKNOWN_OUTPUT', 'VERIFICATION_FAILED', 'COMMAND_ERROR');
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_bot_pending_deliveries_failure_code') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD CONSTRAINT chk_bot_pending_deliveries_failure_code CHECK (last_failure_code IS NULL OR last_failure_code IN ('OFFLINE_WAIT', 'RETRY_OFFLINE', 'TIMEOUT', 'INTERRUPTED', 'VALIDATION_FAILED', 'PAYLOAD_MISMATCH', 'ABANDONED_PENDING', 'CORRUPTED_NO_RECEIPT', 'UNKNOWN_OUTPUT', 'VERIFICATION_FAILED', 'COMMAND_ERROR'));
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_bot_pending_deliveries_delivery_attempts') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD CONSTRAINT chk_bot_pending_deliveries_delivery_attempts CHECK (delivery_attempts >= 0);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_bot_pending_deliveries_offline_deferrals') THEN
+    ALTER TABLE dune.bot_pending_deliveries ADD CONSTRAINT chk_bot_pending_deliveries_offline_deferrals CHECK (offline_deferrals >= 0);
+  END IF;
+  
+  -- Normalize legacy receipt states
+  UPDATE dune.bot_delivery_receipts SET status = 'UNCERTAIN' WHERE status NOT IN ('PENDING', 'SUCCESS', 'UNCERTAIN', 'FAILED');
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_bot_delivery_receipts_status') THEN
+    ALTER TABLE dune.bot_delivery_receipts ADD CONSTRAINT chk_bot_delivery_receipts_status CHECK (status IN ('PENDING', 'SUCCESS', 'UNCERTAIN', 'FAILED'));
+  END IF;
+END $$;
+
+-- Receipt migration step: backfill quality_level from queue
+UPDATE dune.bot_delivery_receipts receipt 
+SET quality_level = pending.quality_level 
+FROM dune.bot_pending_deliveries pending 
+WHERE pending.request_id = receipt.request_id AND receipt.quality_level IS NULL;
+
+-- Apply defaults and NOT NULL to quality_level AFTER backfill
+DO $$
+BEGIN
+  UPDATE dune.bot_delivery_receipts SET quality_level = 0 WHERE quality_level IS NULL;
+  ALTER TABLE dune.bot_delivery_receipts ALTER COLUMN quality_level SET DEFAULT 0;
+  ALTER TABLE dune.bot_delivery_receipts ALTER COLUMN quality_level SET NOT NULL;
+END $$;
+
+-- Explicit granted_at Migration
+UPDATE dune.bot_delivery_receipts SET granted_at = NULL WHERE status IN ('PENDING', 'UNCERTAIN', 'FAILED');
+ALTER TABLE dune.bot_delivery_receipts ALTER COLUMN granted_at DROP NOT NULL;
+
+-- Synchronize queue rows with terminal receipt states
+UPDATE dune.bot_pending_deliveries pending
+SET is_applied = true
+FROM dune.bot_delivery_receipts receipt
+WHERE pending.request_id = receipt.request_id AND receipt.status IN ('SUCCESS', 'UNCERTAIN', 'FAILED') AND pending.is_applied = false;
+
+-- Add a partial index for the offline scan
+CREATE INDEX IF NOT EXISTS idx_bot_pending_deliveries_offline_scan
+ON dune.bot_pending_deliveries (
+  next_eligibility_check_at ASC NULLS FIRST,
+  created_at ASC,
+  id ASC
+)
+WHERE is_applied = false AND lease_token IS NULL;
 
 -- Notification function for the Node daemon
-CREATE OR REPLACE FUNCTION dune_airdrop.trg_notify_pending_delivery_v2()
+CREATE OR REPLACE FUNCTION dune.trg_notify_pending_delivery()
 RETURNS trigger AS $$
 BEGIN
   PERFORM pg_notify('new_airdrop', row_to_json(NEW)::text);
   RETURN NEW;
-EXCEPTION WHEN OTHERS THEN
-  -- Notification delivery must never reject a queued reward insert.
-  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+-- Trigger to notify daemon of new deliveries
+DROP TRIGGER IF EXISTS trg_notify_airdrop ON dune.bot_pending_deliveries;
+CREATE TRIGGER trg_notify_airdrop
+AFTER INSERT ON dune.bot_pending_deliveries
+FOR EACH ROW EXECUTE FUNCTION dune.trg_notify_pending_delivery();
+
 -- 3. Create the addon config table
-CREATE TABLE IF NOT EXISTS dune_airdrop.config (
+CREATE TABLE IF NOT EXISTS dune.discord_bot_config (
   config_key TEXT PRIMARY KEY,
   config_value JSONB
 );
 
--- Insert default configurations if missing
-INSERT INTO dune_airdrop.config (config_key, config_value)
-VALUES
-(
-  'airdrop_multipliers',
-  '{
+-- Insert default configurations or merge with existing
+DO $$
+DECLARE
+  v_old_multipliers JSONB := '{
+    "playtime_enabled": true,
+    "playtime_interval": 60,
+    "playtime_distance": 10.0,
+    "playtime_xp": 1,
+    "playtime_multiplier_t0": 1,
+    "playtime_multiplier_t1": 2,
+    "playtime_multiplier_t2": 3,
+    "playtime_multiplier_t3": 4,
+    "playtime_multiplier_t4": 5,
+    "playtime_multiplier_t5": 6,
+    "playtime_multiplier_t6": 7,
+    "daily_enabled": true,
+    "daily_multiplier_step": 0.5,
+    "daily_max_streak": 7,
+    "weekly_enabled": true,
+    "weekly_days_required": 5,
+    "weekly_multiplier": 5.0
+  }'::jsonb;
+  
+  v_new_multipliers JSONB := '{
     "playtime_enabled": true,
     "playtime_interval": 60,
     "playtime_distance": 10.0,
@@ -95,15 +231,9 @@ VALUES
     "weekly_enabled": true,
     "weekly_days_required": 5,
     "weekly_multiplier": 5.0
-  }'::jsonb
-),
-(
-  'daemon_heartbeat',
-  '{"last_ping": "1970-01-01T00:00:00Z"}'::jsonb
-),
-(
-  'airdrop_economy',
-  '{
+  }'::jsonb;
+
+  v_old_economy JSONB := '{
     "prob_gear": 0.40,
     "prob_schem": 0.80,
     "prob_raw": 1.0,
@@ -116,51 +246,101 @@ VALUES
     "tier_4_min": 20, "tier_4_max": 50,
     "tier_5_min": 30, "tier_5_max": 75,
     "tier_6_min": 50, "tier_6_max": 100
-  }'::jsonb
-)
-ON CONFLICT (config_key) DO NOTHING;
+  }'::jsonb;
 
--- 4. Dynamic level and tier resolver
-CREATE OR REPLACE FUNCTION dune_airdrop.fn_get_pawn_tier_v2(p_pawn_id BIGINT)
+  v_new_economy JSONB := '{
+    "prob_gear": 0.40,
+    "prob_schem": 0.80,
+    "prob_raw": 1.0,
+    "prob_craft": 1.0,
+    "min_items": 1,
+    "tier_0_min": 5, "tier_0_max": 10,
+    "tier_1_min": 5, "tier_1_max": 15,
+    "tier_2_min": 10, "tier_2_max": 25,
+    "tier_3_min": 15, "tier_3_max": 35,
+    "tier_4_min": 20, "tier_4_max": 50,
+    "tier_5_min": 30, "tier_5_max": 75,
+    "tier_6_min": 50, "tier_6_max": 100
+  }'::jsonb;
+
+  v_existing_mult JSONB;
+  v_existing_econ JSONB;
+BEGIN
+  -- Handle airdrop_multipliers
+  IF EXISTS (SELECT 1 FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers') THEN
+    SELECT config_value INTO v_existing_mult FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
+    IF jsonb_typeof(v_existing_mult) = 'object' THEN
+      UPDATE dune.discord_bot_config 
+      SET config_value = v_old_multipliers || v_existing_mult 
+      WHERE config_key = 'airdrop_multipliers';
+    ELSE
+      UPDATE dune.discord_bot_config 
+      SET config_value = v_new_multipliers 
+      WHERE config_key = 'airdrop_multipliers';
+    END IF;
+  ELSE
+    INSERT INTO dune.discord_bot_config (config_key, config_value) 
+    VALUES ('airdrop_multipliers', v_new_multipliers);
+  END IF;
+
+  -- Handle airdrop_economy
+  IF EXISTS (SELECT 1 FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy') THEN
+    SELECT config_value INTO v_existing_econ FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy';
+    IF jsonb_typeof(v_existing_econ) = 'object' THEN
+      UPDATE dune.discord_bot_config 
+      SET config_value = v_old_economy || v_existing_econ 
+      WHERE config_key = 'airdrop_economy';
+    ELSE
+      UPDATE dune.discord_bot_config 
+      SET config_value = v_new_economy 
+      WHERE config_key = 'airdrop_economy';
+    END IF;
+  ELSE
+    INSERT INTO dune.discord_bot_config (config_key, config_value) 
+    VALUES ('airdrop_economy', v_new_economy);
+  END IF;
+
+  -- Daemon heartbeat
+  INSERT INTO dune.discord_bot_config (config_key, config_value) 
+  VALUES ('daemon_heartbeat', '{"last_ping": "1970-01-01T00:00:00Z"}'::jsonb)
+  ON CONFLICT (config_key) DO NOTHING;
+END $$;
+
+-- 4. Dynamic tier resolver using canonical XP curve (Project CUMULATIVE_XP_BY_LEVEL, max 344,440 XP)
+CREATE OR REPLACE FUNCTION dune.fn_get_pawn_tier(p_pawn_id BIGINT)
 RETURNS INT AS $$
 DECLARE
+  v_xp_text TEXT;
   v_xp BIGINT := 0;
-  v_skill_points INT := 0;
-  v_keystone_points INT := 0;
-  v_level INT := 1;
-  v_tier INT := 0;
 BEGIN
-  SELECT
-    COALESCE((fe.components->'FLevelComponent'->1->>'TotalXPEarned')::bigint, 0),
-    COALESCE((fe.components->'FLevelComponent'->1->>'TotalSkillPoints')::int, 0),
-    COALESCE((fe.components->'FLevelComponent'->1->>'KeystoneBonusSkillPoints')::int, 0)
-  INTO v_xp, v_skill_points, v_keystone_points
+  SELECT 
+    fe.components->'FLevelComponent'->1->>'TotalXPEarned'
+  INTO v_xp_text
   FROM dune.actor_fgl_entities afe
   LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
   WHERE afe.actor_id = p_pawn_id AND afe.slot_name = 'DuneCharacter'
   LIMIT 1;
 
-  IF v_skill_points > 0 THEN
-    v_level := LEAST(200, v_skill_points - v_keystone_points + 1);
-  ELSE
-    v_level := LEAST(200, FLOOR(SQRT(v_xp / 100.0))::INT + 1);
+  IF v_xp_text IS NOT NULL AND v_xp_text ~ '^-?[0-9]+(\.[0-9]+)?$' THEN
+    v_xp := v_xp_text::numeric::bigint;
   END IF;
+  
+  IF v_xp < 0 THEN v_xp := 0; END IF;
+  IF v_xp > 344440 THEN v_xp := 344440; END IF;
 
-  IF v_level IS NULL OR v_level < 1 THEN v_level := 1; END IF;
-
-  IF v_level >= 150 THEN RETURN 6;
-  ELSIF v_level >= 120 THEN RETURN 5;
-  ELSIF v_level >= 80 THEN RETURN 4;
-  ELSIF v_level >= 50 THEN RETURN 3;
-  ELSIF v_level >= 20 THEN RETURN 2;
-  ELSIF v_level >= 10 THEN RETURN 1;
-  ELSE RETURN 0;
+  IF v_xp >= 93099 THEN RETURN 6;      -- Tier 6 (Level 150+)
+  ELSIF v_xp >= 71190 THEN RETURN 5;   -- Tier 5 (Level 120+)
+  ELSIF v_xp >= 46190 THEN RETURN 4;   -- Tier 4 (Level 80+)
+  ELSIF v_xp >= 28190 THEN RETURN 3;   -- Tier 3 (Level 50+)
+  ELSIF v_xp >= 10190 THEN RETURN 2;   -- Tier 2 (Level 20+)
+  ELSIF v_xp >= 4190 THEN RETURN 1;    -- Tier 1 (Level 10+)
+  ELSE RETURN 0;                       -- Tier 0 (Level 0-9)
   END IF;
 END;
 $$ LANGUAGE plpgsql;
 
 -- 5. Standard Item Rolling Sub-Routine
-CREATE OR REPLACE FUNCTION dune_airdrop.fn_queue_reward_roll_v2(p_account_id BIGINT, p_tier INT, p_multiplier NUMERIC, p_reason TEXT)
+CREATE OR REPLACE FUNCTION dune.fn_queue_reward_roll(p_account_id BIGINT, p_tier INT, p_multiplier NUMERIC, p_reason TEXT)
 RETURNS VOID AS $$
 DECLARE
   v_gear_template TEXT;
@@ -180,19 +360,16 @@ DECLARE
   v_tier_min INT := 5;
   v_tier_max INT := 10;
   v_granted_count INT := 0;
-  v_minimum_attempts INT := 0;
 BEGIN
   v_num_rolls := GREATEST(1, ROUND(p_multiplier));
 
-  SELECT config_value INTO v_econ FROM dune_airdrop.config WHERE config_key = 'airdrop_economy';
+  SELECT config_value INTO v_econ FROM dune.discord_bot_config WHERE config_key = 'airdrop_economy';
   IF v_econ IS NOT NULL THEN
     v_prob_gear := COALESCE((v_econ->>'prob_gear')::numeric, 0.40);
     v_prob_schem := COALESCE((v_econ->>'prob_schem')::numeric, 0.80);
     v_prob_raw := COALESCE((v_econ->>'prob_raw')::numeric, 1.0);
     v_prob_craft := COALESCE((v_econ->>'prob_craft')::numeric, 1.0);
-    -- A reward roll has four distinct categories, so a larger minimum can
-    -- never be satisfied and would otherwise leave the trigger looping.
-    v_min_drops := LEAST(4, GREATEST(0, COALESCE((v_econ->>'min_items')::int, 1)));
+    v_min_drops := COALESCE((v_econ->>'min_items')::int, 1);
     v_tier_min := COALESCE((v_econ->>('tier_' || p_tier || '_min'))::int, 5);
     v_tier_max := GREATEST(v_tier_min, COALESCE((v_econ->>('tier_' || p_tier || '_max'))::int, 10));
   END IF;
@@ -203,47 +380,45 @@ BEGIN
     v_schem_template := NULL;
     v_res_template_1 := NULL;
     v_res_template_2 := NULL;
-    v_minimum_attempts := 0;
 
     -- Initial Rolls
     IF RANDOM() <= v_prob_gear THEN
-      SELECT template_id INTO v_gear_template FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'gear' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      SELECT template_id INTO v_gear_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'gear' ORDER BY RANDOM() * weight DESC LIMIT 1;
       IF v_gear_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; v_gear_quality := 0; END IF;
     END IF;
 
     IF RANDOM() <= v_prob_raw THEN
-      SELECT template_id INTO v_res_template_1 FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'raw_resources' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      SELECT template_id INTO v_res_template_1 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'raw_resources' ORDER BY RANDOM() * weight DESC LIMIT 1;
       IF v_res_template_1 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
     END IF;
-
+    
     IF RANDOM() <= v_prob_craft THEN
-      SELECT template_id INTO v_res_template_2 FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'crafted_components' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      SELECT template_id INTO v_res_template_2 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'crafted_components' ORDER BY RANDOM() * weight DESC LIMIT 1;
       IF v_res_template_2 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
     END IF;
 
     IF RANDOM() <= v_prob_schem THEN
-      SELECT template_id INTO v_schem_template FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'schematics' ORDER BY RANDOM() * weight DESC LIMIT 1;
+      SELECT template_id INTO v_schem_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'schematics' ORDER BY RANDOM() * weight DESC LIMIT 1;
       IF v_schem_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
     END IF;
 
     -- Minimum guarantee
-    WHILE v_granted_count < v_min_drops AND v_minimum_attempts < 32 LOOP
-      v_minimum_attempts := v_minimum_attempts + 1;
+    WHILE v_granted_count < v_min_drops LOOP
       -- Pick a random missing category
       IF v_gear_template IS NULL AND RANDOM() < 0.25 THEN
-        SELECT template_id INTO v_gear_template FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'gear' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        SELECT template_id INTO v_gear_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'gear' ORDER BY RANDOM() * weight DESC LIMIT 1;
         IF v_gear_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; v_gear_quality := 0; END IF;
       ELSIF v_res_template_1 IS NULL AND RANDOM() < 0.5 THEN
-        SELECT template_id INTO v_res_template_1 FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'raw_resources' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        SELECT template_id INTO v_res_template_1 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'raw_resources' ORDER BY RANDOM() * weight DESC LIMIT 1;
         IF v_res_template_1 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
       ELSIF v_res_template_2 IS NULL AND RANDOM() < 0.75 THEN
-        SELECT template_id INTO v_res_template_2 FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'crafted_components' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        SELECT template_id INTO v_res_template_2 FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'crafted_components' ORDER BY RANDOM() * weight DESC LIMIT 1;
         IF v_res_template_2 IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
       ELSIF v_schem_template IS NULL THEN
-        SELECT template_id INTO v_schem_template FROM dune_airdrop.loot_tables WHERE tier = p_tier AND category = 'schematics' ORDER BY RANDOM() * weight DESC LIMIT 1;
+        SELECT template_id INTO v_schem_template FROM dune.airdrop_loot_tables WHERE tier = p_tier AND category = 'schematics' ORDER BY RANDOM() * weight DESC LIMIT 1;
         IF v_schem_template IS NOT NULL THEN v_granted_count := v_granted_count + 1; END IF;
       END IF;
-
+      
       -- Failsafe for infinite loop (e.g. no items in loot table for tier)
       IF v_gear_template IS NOT NULL AND v_res_template_1 IS NOT NULL AND v_res_template_2 IS NOT NULL AND v_schem_template IS NOT NULL THEN
         EXIT;
@@ -263,83 +438,83 @@ BEGIN
 
     -- Queue items
     IF v_gear_template IS NOT NULL THEN
-      INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-      VALUES (p_account_id, v_gear_template, 1, FALSE, v_gear_quality);
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level, request_id)
+      VALUES (p_account_id, v_gear_template, 1, FALSE, v_gear_quality, gen_random_uuid());
     END IF;
 
     IF v_res_template_1 IS NOT NULL THEN
-      INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-      VALUES (p_account_id, v_res_template_1, v_res_qty_1, FALSE, 0);
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level, request_id)
+      VALUES (p_account_id, v_res_template_1, v_res_qty_1, FALSE, 0, gen_random_uuid());
     END IF;
 
     IF v_res_template_2 IS NOT NULL THEN
-      INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-      VALUES (p_account_id, v_res_template_2, v_res_qty_2, FALSE, 0);
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level, request_id)
+      VALUES (p_account_id, v_res_template_2, v_res_qty_2, FALSE, 0, gen_random_uuid());
     END IF;
 
     IF v_schem_template IS NOT NULL THEN
-      INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-      VALUES (p_account_id, v_schem_template, 1, FALSE, 0);
+      INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level, request_id)
+      VALUES (p_account_id, v_schem_template, 1, FALSE, 0, gen_random_uuid());
     END IF;
   END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
 -- 6. Playtime Reward Rolling logic wrapper
-CREATE OR REPLACE FUNCTION dune_airdrop.fn_roll_playtime_reward_v2(p_account_id BIGINT, p_pawn_id BIGINT)
+CREATE OR REPLACE FUNCTION dune.fn_roll_playtime_reward(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_tier INT;
   v_config JSONB;
   v_multiplier NUMERIC := 1.0;
 BEGIN
-  v_tier := dune_airdrop.fn_get_pawn_tier_v2(p_pawn_id);
+  v_tier := dune.fn_get_pawn_tier(p_pawn_id);
 
-  SELECT config_value INTO v_config FROM dune_airdrop.config WHERE config_key = 'airdrop_multipliers';
+  SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
   IF v_config IS NOT NULL THEN
     v_multiplier := COALESCE((v_config->>('playtime_multiplier_t' || v_tier::text))::numeric, 1.0);
   END IF;
   IF v_multiplier < 1.0 THEN v_multiplier := 1.0; END IF;
 
-  PERFORM dune_airdrop.fn_queue_reward_roll_v2(p_account_id, v_tier, v_multiplier, 'playtime');
+  PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_multiplier, 'playtime');
 END;
 $$ LANGUAGE plpgsql;
 
 -- 7. Deliver pending rewards instantly without relogs
-CREATE OR REPLACE FUNCTION dune_airdrop.fn_deliver_playtime_airdrops_v2(p_account_id BIGINT, p_pawn_id BIGINT)
+CREATE OR REPLACE FUNCTION dune.fn_deliver_playtime_airdrops(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_inv_id INT;
   v_item RECORD;
 BEGIN
-  SELECT id INTO v_inv_id
-  FROM dune.inventories
-  WHERE actor_id = p_pawn_id AND inventory_type = 0
+  SELECT id INTO v_inv_id 
+  FROM dune.inventories 
+  WHERE actor_id = p_pawn_id AND inventory_type = 0 
   LIMIT 1;
 
   IF v_inv_id IS NOT NULL THEN
-    FOR v_item IN
-      SELECT id, template_id, stack_size, quality_level
-      FROM dune_airdrop.pending_deliveries
+    FOR v_item IN 
+      SELECT id, template_id, stack_size, quality_level 
+      FROM dune.bot_pending_deliveries 
       WHERE account_id = p_account_id AND is_applied = FALSE
     LOOP
       INSERT INTO dune.items (inventory_id, template_id, stack_size, position_index, stats, quality_level)
       VALUES (
-        v_inv_id,
-        v_item.template_id,
-        v_item.stack_size,
-        (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = v_inv_id),
-        CASE
+        v_inv_id, 
+        v_item.template_id, 
+        v_item.stack_size, 
+        (SELECT COALESCE(MAX(position_index) + 1, 0) FROM dune.items WHERE inventory_id = v_inv_id), 
+        CASE 
           WHEN v_item.quality_level > 0 OR v_item.stack_size = 1 THEN
             '{"FCustomizationStats": [[], {}], "FItemStackAndDurabilityStats": [[], {"CurrentDurability": 1000, "MaxDurability": 1000, "DecayedMaxDurability": 1000}], "FWeaponItemStats": [[], {"CurrentAmmo": 0}]}'::jsonb
           ELSE
             '{"FItemStackAndDurabilityStats": [[], {"DecayedMaxDurability": 0.0}]}'::jsonb
-        END,
+        END, 
         v_item.quality_level
       );
 
-      UPDATE dune_airdrop.pending_deliveries
-      SET is_applied = TRUE
+      UPDATE dune.bot_pending_deliveries 
+      SET is_applied = TRUE 
       WHERE id = v_item.id;
     END LOOP;
   END IF;
@@ -347,22 +522,22 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 8. Daily and Weekly rewards check function executed on login/save
-CREATE OR REPLACE FUNCTION dune_airdrop.fn_check_daily_weekly_rewards_v2(p_account_id BIGINT, p_pawn_id BIGINT)
+CREATE OR REPLACE FUNCTION dune.fn_check_daily_weekly_rewards(p_account_id BIGINT, p_pawn_id BIGINT)
 RETURNS VOID AS $$
 DECLARE
   v_config JSONB;
   v_today DATE := CURRENT_DATE;
   v_track RECORD;
   v_tier INT;
-
+  
   v_daily_enabled BOOLEAN := TRUE;
   v_daily_step NUMERIC := 0.5;
   v_daily_max INT := 7;
-
+  
   v_weekly_enabled BOOLEAN := TRUE;
   v_weekly_req INT := 5;
   v_weekly_scale NUMERIC := 5.0;
-
+  
   v_streak INT := 1;
   v_multiplier NUMERIC := 1.0;
   v_weekly_days_count INT := 0;
@@ -372,7 +547,7 @@ DECLARE
   v_i INT;
 BEGIN
   -- Load configurations
-  SELECT config_value INTO v_config FROM dune_airdrop.config WHERE config_key = 'airdrop_multipliers';
+  SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
   IF v_config IS NOT NULL THEN
     v_daily_enabled := COALESCE((v_config->>'daily_enabled')::boolean, TRUE);
     v_daily_step := COALESCE((v_config->>'daily_multiplier_step')::numeric, 0.5);
@@ -382,24 +557,24 @@ BEGIN
     v_weekly_scale := COALESCE((v_config->>'weekly_multiplier')::numeric, 5.0);
   END IF;
 
-  v_tier := dune_airdrop.fn_get_pawn_tier_v2(p_pawn_id);
+  v_tier := dune.fn_get_pawn_tier(p_pawn_id);
 
   -- Determine the current Coriolis Week ID and Day of Week
   -- Coriolis hits Tuesday ~05:00 UTC. We will use Tuesday 00:00 as the exact start of the week.
   -- By shifting ISO day backwards by 1 (i.e. CURRENT_DATE - INTERVAL '1 day'), Tuesday becomes the start of the ISO week.
   v_current_week_id := (EXTRACT(YEAR FROM v_today - INTERVAL '1 day')::INT * 100) + EXTRACT(WEEK FROM v_today - INTERVAL '1 day')::INT;
-
+  
   -- Calculate day of week index relative to Tuesday (0 = Tuesday, 1 = Wednesday, ... 6 = Monday)
   -- ISODOW returns 1 (Monday) to 7 (Sunday)
   v_day_of_week := (EXTRACT(ISODOW FROM v_today)::INT + 5) % 7;
 
   -- Fetch player stats record with FOR UPDATE to prevent concurrent duplicate rewards
-  SELECT * INTO v_track FROM dune_airdrop.active_playtime WHERE character_id = p_pawn_id FOR UPDATE;
+  SELECT * INTO v_track FROM dune.bot_active_playtime WHERE character_id = p_pawn_id FOR UPDATE;
   IF v_track.character_id IS NULL THEN
     -- Initialize if missing
-    INSERT INTO dune_airdrop.active_playtime (character_id, last_login_date, consecutive_days, weekly_login_mask, current_week_id)
+    INSERT INTO dune.bot_active_playtime (character_id, last_login_date, consecutive_days, weekly_login_mask, current_week_id)
     VALUES (p_pawn_id, v_today - INTERVAL '1 day', 0, 0, v_current_week_id);
-
+    
     v_track.last_login_date := v_today - INTERVAL '1 day';
     v_track.consecutive_days := 0;
     v_track.weekly_login_mask := 0;
@@ -425,9 +600,9 @@ BEGIN
     END IF;
 
     -- Update tracking stats
-    UPDATE dune_airdrop.active_playtime
-    SET
-      last_login_date = v_today,
+    UPDATE dune.bot_active_playtime 
+    SET 
+      last_login_date = v_today, 
       consecutive_days = v_streak,
       weekly_login_mask = v_mask,
       current_week_id = v_current_week_id
@@ -436,7 +611,7 @@ BEGIN
     -- Roll and Deliver Daily Reward if enabled
     IF v_daily_enabled THEN
       v_multiplier := 1.0 + ((v_streak - 1) * v_daily_step);
-      PERFORM dune_airdrop.fn_queue_reward_roll_v2(p_account_id, v_tier, v_multiplier, 'daily');
+      PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_multiplier, 'daily');
     END IF;
 
     -- Process Weekly Attendance Reward (If enabled and threshold met)
@@ -451,13 +626,13 @@ BEGIN
 
       -- Check if target is met and we haven't already claimed weekly attendance this week
       IF v_weekly_days_count >= v_weekly_req THEN
-        IF v_track.last_weekly_claimed_at IS NULL OR
+        IF v_track.last_weekly_claimed_at IS NULL OR 
            ((EXTRACT(YEAR FROM v_track.last_weekly_claimed_at - INTERVAL '1 day')::INT * 100) + EXTRACT(WEEK FROM v_track.last_weekly_claimed_at - INTERVAL '1 day')::INT) != v_current_week_id THEN
-
-          PERFORM dune_airdrop.fn_queue_reward_roll_v2(p_account_id, v_tier, v_weekly_scale, 'weekly');
-
-          UPDATE dune_airdrop.active_playtime
-          SET last_weekly_claimed_at = NOW()
+          
+          PERFORM dune.fn_queue_reward_roll(p_account_id, v_tier, v_weekly_scale, 'weekly');
+          
+          UPDATE dune.bot_active_playtime 
+          SET last_weekly_claimed_at = NOW() 
           WHERE character_id = p_pawn_id;
         END IF;
       END IF;
@@ -468,7 +643,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 9. Trigger handler running on player updates
-CREATE OR REPLACE FUNCTION dune_airdrop.trg_track_playtime_v2()
+CREATE OR REPLACE FUNCTION dune.trg_track_playtime()
 RETURNS TRIGGER AS $$
 DECLARE
   v_delta_seconds INT;
@@ -476,17 +651,17 @@ DECLARE
   v_config JSONB;
   v_daemon JSONB;
   v_last_ping TIMESTAMP WITH TIME ZONE;
-
+  
   v_playtime_enabled BOOLEAN := TRUE;
   v_interval_min INT := 60;
   v_min_dist DOUBLE PRECISION := 10.0;
   v_min_xp INT := 1;
-
+  
   v_curr_xp BIGINT := 0;
   v_x DOUBLE PRECISION := 0.0;
   v_y DOUBLE PRECISION := 0.0;
   v_z DOUBLE PRECISION := 0.0;
-
+  
   v_track RECORD;
   v_dist DOUBLE PRECISION;
   v_xp_diff BIGINT;
@@ -498,21 +673,8 @@ BEGIN
 
   -- Only track if player's online status is 'online'
   IF LOWER(NEW.online_status::text) = 'online' THEN
-    -- THROTTLE: Prevent lag spikes from rapid inventory updates (e.g. dumping items in containers)
-    -- Check when we last evaluated this player. If it was less than 60 seconds ago, exit early.
-    SELECT last_active_at INTO v_prev_active
-    FROM dune_airdrop.active_playtime
-    WHERE character_id = NEW.player_pawn_id;
-
-    IF v_prev_active IS NOT NULL THEN
-      v_delta_seconds := EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_prev_active))::INT;
-      IF v_delta_seconds < 60 THEN
-        RETURN NEW;
-      END IF;
-    END IF;
-
     -- Load configurations
-    SELECT config_value INTO v_config FROM dune_airdrop.config WHERE config_key = 'airdrop_multipliers';
+    SELECT config_value INTO v_config FROM dune.discord_bot_config WHERE config_key = 'airdrop_multipliers';
     IF v_config IS NOT NULL THEN
       v_playtime_enabled := COALESCE((v_config->>'playtime_enabled')::boolean, TRUE);
       v_interval_min := COALESCE((v_config->>'playtime_interval')::int, 60);
@@ -522,37 +684,47 @@ BEGIN
     IF v_interval_min < 1 THEN v_interval_min := 60; END IF;
 
     -- Handle daily/weekly login claims instantly on online save
-    PERFORM dune_airdrop.fn_check_daily_weekly_rewards_v2(NEW.account_id, NEW.player_pawn_id);
+    PERFORM dune.fn_check_daily_weekly_rewards(NEW.account_id, NEW.player_pawn_id);
 
-    -- Fetch current coordinates and XP
-    SELECT
-      COALESCE((fe.components->'FLevelComponent'->1->>'TotalXPEarned')::bigint, 0)
-    INTO v_curr_xp
-    FROM dune.actor_fgl_entities afe
-    LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
-    WHERE afe.actor_id = NEW.player_pawn_id AND afe.slot_name = 'DuneCharacter'
-    LIMIT 1;
+    -- Fetch current coordinates and safely parse XP to avoid numeric overflow
+    DECLARE
+      v_xp_text TEXT;
+    BEGIN
+      SELECT 
+        fe.components->'FLevelComponent'->1->>'TotalXPEarned'
+      INTO v_xp_text
+      FROM dune.actor_fgl_entities afe
+      LEFT JOIN dune.fgl_entities fe ON fe.entity_id = afe.entity_id
+      WHERE afe.actor_id = NEW.player_pawn_id AND afe.slot_name = 'DuneCharacter'
+      LIMIT 1;
+
+      IF v_xp_text IS NOT NULL AND v_xp_text ~ '^-?[0-9]+(\.[0-9]+)?$' THEN
+        v_curr_xp := v_xp_text::numeric::bigint;
+      END IF;
+      IF v_curr_xp < 0 THEN v_curr_xp := 0; END IF;
+      IF v_curr_xp > 344440 THEN v_curr_xp := 344440; END IF;
+    END;
 
     -- Extract translation coordinates safely
     IF NEW.player_pawn_id IS NOT NULL THEN
-      SELECT
-        ((transform).location).x::double precision,
-        ((transform).location).y::double precision,
+      SELECT 
+        ((transform).location).x::double precision, 
+        ((transform).location).y::double precision, 
         ((transform).location).z::double precision
       INTO v_x, v_y, v_z
-      FROM dune.actors
+      FROM dune.actors 
       WHERE id = NEW.player_pawn_id;
     END IF;
 
     -- Get previous active status
-    SELECT * INTO v_track
-    FROM dune_airdrop.active_playtime
+    SELECT * INTO v_track 
+    FROM dune.bot_active_playtime 
     WHERE character_id = NEW.player_pawn_id;
-
+    
     IF v_track.character_id IS NOT NULL THEN
       -- Calculate seconds passed since last save/update
       v_delta_seconds := EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - v_track.last_active_at))::INT;
-
+      
       -- Limit delta to 600 seconds (10 minutes) per save to accommodate the engine's 5-minute auto-save
       -- and to avoid offline time-jumps when a player logs back in after days
       IF v_delta_seconds > 0 AND v_delta_seconds < 600 THEN
@@ -569,16 +741,16 @@ BEGIN
 
         IF v_is_active THEN
           v_accumulated_seconds := v_track.active_seconds + v_delta_seconds;
-
+          
           -- Check if playtime threshold is achieved (and playtime airdrops are enabled)
           IF v_playtime_enabled AND v_accumulated_seconds >= (v_interval_min * 60) THEN
             -- Roll reward pack
-            PERFORM dune_airdrop.fn_roll_playtime_reward_v2(NEW.account_id, NEW.player_pawn_id);
+            PERFORM dune.fn_roll_playtime_reward(NEW.account_id, NEW.player_pawn_id);
             v_accumulated_seconds := 0;
           END IF;
-
-          UPDATE dune_airdrop.active_playtime
-          SET
+          
+          UPDATE dune.bot_active_playtime 
+          SET 
             active_seconds = v_accumulated_seconds,
             last_xp = v_curr_xp,
             last_x = v_x,
@@ -588,37 +760,34 @@ BEGIN
           WHERE character_id = NEW.player_pawn_id;
         ELSE
           -- Idle player, update timestamp but do not count active seconds
-          UPDATE dune_airdrop.active_playtime
-          SET last_active_at = CURRENT_TIMESTAMP
+          UPDATE dune.bot_active_playtime 
+          SET last_active_at = CURRENT_TIMESTAMP 
           WHERE character_id = NEW.player_pawn_id;
         END IF;
       ELSE
         -- Update timestamp without adding playtime if time jump is too large (e.g. initial login)
-        UPDATE dune_airdrop.active_playtime
-        SET last_active_at = CURRENT_TIMESTAMP
+        UPDATE dune.bot_active_playtime 
+        SET last_active_at = CURRENT_TIMESTAMP 
         WHERE character_id = NEW.player_pawn_id;
       END IF;
     ELSE
       -- Initialize playtime record for new character
-      INSERT INTO dune_airdrop.active_playtime (character_id, active_seconds, last_xp, last_x, last_y, last_z, last_active_at)
+      INSERT INTO dune.bot_active_playtime (character_id, active_seconds, last_xp, last_x, last_y, last_z, last_active_at)
       VALUES (NEW.player_pawn_id, 0, v_curr_xp, v_x, v_y, v_z, CURRENT_TIMESTAMP);
     END IF;
   ELSE
     -- Player went offline, invalidate active timestamp to prevent counting while offline
-    UPDATE dune_airdrop.active_playtime
-    SET last_active_at = NULL
+    UPDATE dune.bot_active_playtime 
+    SET last_active_at = NULL 
     WHERE character_id = NEW.player_pawn_id;
   END IF;
-
+  
   -- Force direct delivery run on save to catch any lingering drops
   IF NEW.online_status::text = 'Online' THEN
     -- Native delivery disabled so Node daemon can handle instant delivery via RCON
-    -- PERFORM dune_airdrop.fn_deliver_playtime_airdrops_v2(NEW.account_id, NEW.player_pawn_id);
+    -- PERFORM dune.fn_deliver_playtime_airdrops(NEW.account_id, NEW.player_pawn_id);
   END IF;
 
-  RETURN NEW;
-EXCEPTION WHEN OTHERS THEN
-  -- A rewards failure must never reject the game's player-state update.
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -629,7 +798,7 @@ DROP TRIGGER IF EXISTS trg_player_state_playtime ON dune.encrypted_player_state;
 CREATE TRIGGER trg_player_state_playtime
 AFTER UPDATE ON dune.encrypted_player_state
 FOR EACH ROW
-EXECUTE FUNCTION dune_airdrop.trg_track_playtime_v2();
+EXECUTE FUNCTION dune.trg_track_playtime();
 
 -- Initial diagnostics print
 SELECT 'Arrakis Playtime Airdrop database trigger configured successfully!' AS status;
@@ -639,7 +808,7 @@ SELECT 'Arrakis Playtime Airdrop database trigger configured successfully!' AS s
 -- DO NOT EDIT THIS BLOCK MANUALLY
 -- ==========================================
 
-CREATE TABLE IF NOT EXISTS dune_airdrop.loot_tables (
+CREATE TABLE IF NOT EXISTS dune.airdrop_loot_tables (
   tier INT,
   category TEXT,
   template_id TEXT,
@@ -647,7 +816,7 @@ CREATE TABLE IF NOT EXISTS dune_airdrop.loot_tables (
   UNIQUE(tier, category, template_id)
 );
 
-INSERT INTO dune_airdrop.loot_tables (tier, category, template_id, weight) VALUES
+INSERT INTO dune.airdrop_loot_tables (tier, category, template_id, weight) VALUES
 (0, 'raw_resources', 'PlantFiber', 100),
 (0, 'crafted_components', 'ScrapMetal', 100),
 (0, 'crafted_components', 'SolarisCoin', 10),
@@ -2295,105 +2464,10 @@ ON CONFLICT (tier, category, template_id) DO NOTHING;
 -- ==========================================
 -- [END AUTO-GENERATED LOOT POOLS]
 
--- Migrate readable v1.3.6 data without altering or taking ownership of the
--- legacy objects. This remains safe to rerun after the migration is complete.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM dune_airdrop.config
-    WHERE config_key = 'legacy_v136_migrated'
-  ) AND to_regclass('dune.airdrop_active_playtime') IS NOT NULL THEN
-    INSERT INTO dune_airdrop.active_playtime
-      (character_id, active_seconds, last_xp, last_x, last_y, last_z,
-       last_active_at, last_login_date, consecutive_days, weekly_login_mask,
-       current_week_id, last_weekly_claimed_at)
-    SELECT character_id, active_seconds, last_xp, last_x, last_y, last_z,
-           last_active_at, last_login_date, consecutive_days, weekly_login_mask,
-           current_week_id, last_weekly_claimed_at
-    FROM dune.airdrop_active_playtime
-    ON CONFLICT (character_id) DO UPDATE SET
-      active_seconds = EXCLUDED.active_seconds,
-      last_xp = EXCLUDED.last_xp,
-      last_x = EXCLUDED.last_x,
-      last_y = EXCLUDED.last_y,
-      last_z = EXCLUDED.last_z,
-      last_active_at = EXCLUDED.last_active_at,
-      last_login_date = EXCLUDED.last_login_date,
-      consecutive_days = EXCLUDED.consecutive_days,
-      weekly_login_mask = EXCLUDED.weekly_login_mask,
-      current_week_id = EXCLUDED.current_week_id,
-      last_weekly_claimed_at = EXCLUDED.last_weekly_claimed_at;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM dune_airdrop.config
-    WHERE config_key = 'legacy_v136_migrated'
-  ) AND to_regclass('dune.airdrop_pending_deliveries') IS NOT NULL THEN
-    INSERT INTO dune_airdrop.pending_deliveries
-      (id, request_id, account_id, template_id, stack_size, quality_level,
-       is_applied, locked_at, created_at)
-    SELECT id, COALESCE(request_id, gen_random_uuid()), account_id, template_id, stack_size, quality_level,
-           is_applied, locked_at, created_at
-    FROM dune.airdrop_pending_deliveries
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM dune_airdrop.config
-    WHERE config_key = 'legacy_v136_migrated'
-  ) AND to_regclass('dune.airdrop_delivery_receipts') IS NOT NULL THEN
-    INSERT INTO dune_airdrop.delivery_receipts
-      (request_id, account_id, template_id, quantity, status, granted_at)
-    SELECT request_id, account_id, template_id, quantity, status, granted_at
-    FROM dune.airdrop_delivery_receipts
-    ON CONFLICT (request_id) DO NOTHING;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM dune_airdrop.config
-    WHERE config_key = 'legacy_v136_migrated'
-  ) AND to_regclass('dune.airdrop_config') IS NOT NULL THEN
-    INSERT INTO dune_airdrop.config (config_key, config_value)
-    SELECT config_key, config_value
-    FROM dune.airdrop_config
-    ON CONFLICT (config_key) DO UPDATE
-      SET config_value = EXCLUDED.config_value;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM dune_airdrop.config
-    WHERE config_key = 'legacy_v136_migrated'
-  ) AND to_regclass('dune.airdrop_loot_tables') IS NOT NULL THEN
-    INSERT INTO dune_airdrop.loot_tables (tier, category, template_id, weight)
-    SELECT tier, category, template_id, weight
-    FROM dune.airdrop_loot_tables
-    ON CONFLICT (tier, category, template_id) DO UPDATE
-      SET weight = EXCLUDED.weight;
-  END IF;
-
-  INSERT INTO dune_airdrop.config (config_key, config_value)
-  VALUES ('legacy_v136_migrated', jsonb_build_object('completed_at', NOW()))
-  ON CONFLICT (config_key) DO NOTHING;
-END;
-$$;
-
--- Create notifications only after legacy rows have been copied so migration
--- cannot accidentally wake an older daemon during setup.
-DROP TRIGGER IF EXISTS trg_notify_airdrop ON dune_airdrop.pending_deliveries;
-CREATE TRIGGER trg_notify_airdrop
-AFTER INSERT ON dune_airdrop.pending_deliveries
-FOR EACH ROW EXECUTE FUNCTION dune_airdrop.trg_notify_pending_delivery_v2();
-
-SELECT setval(
-  pg_get_serial_sequence('dune_airdrop.pending_deliveries', 'id'),
-  GREATEST(COALESCE((SELECT MAX(id) FROM dune_airdrop.pending_deliveries), 1), 1),
-  EXISTS (SELECT 1 FROM dune_airdrop.pending_deliveries)
-);
-
 -- ==========================================
 -- [START MANUAL SPAWN HELPER]
 -- ==========================================
-CREATE OR REPLACE FUNCTION dune_airdrop.fn_manual_airdrop_spawn(p_container_id BIGINT, p_template_id TEXT, p_qty INT)
+CREATE OR REPLACE FUNCTION dune.fn_manual_airdrop_spawn(p_container_id BIGINT, p_template_id TEXT, p_qty INT)
 RETURNS VOID AS $$
 DECLARE
   v_account_id BIGINT;
@@ -2410,9 +2484,7 @@ BEGIN
     RAISE EXCEPTION 'Container % not found or has no owner account', p_container_id;
   END IF;
 
-  INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level)
-  VALUES (v_account_id, p_template_id, p_qty, false, 0);
+  INSERT INTO dune.bot_pending_deliveries (account_id, template_id, stack_size, is_applied, quality_level, request_id)
+  VALUES (v_account_id, p_template_id, p_qty, false, 0, gen_random_uuid());
 END;
 $$ LANGUAGE plpgsql;
-
-RESET ROLE;
