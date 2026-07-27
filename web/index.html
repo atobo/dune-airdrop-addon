@@ -57,9 +57,6 @@
           <button id="tabSettingsBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition bg-amber-500 text-slate-950 neon-glow-orange">
             AIRDROPS & SETTINGS
           </button>
-          <button id="tabLootBtn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition bg-slate-800 text-slate-300 hover:bg-slate-700">
-            LOOT & INVENTORY
-          </button>
         </nav>
       </div>
       <div class="flex items-center space-x-4">
@@ -84,7 +81,7 @@
             <span class="mr-2">⏱️</span> Playtime Airdrop Settings
           </h2>
           <div class="flex items-center space-x-4">
-            <button id="initializeSchemaBtn" onclick="handleInitializeSchema()" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
+            <button onclick="handleInitializeSchema()" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold py-1 px-3 rounded text-xs font-mono tracking-wider transition">
               INIT SCHEMA
             </button>
             <label class="relative inline-flex items-center cursor-pointer">
@@ -282,10 +279,10 @@
             <div class="flex items-center justify-between">
               <span class="font-semibold text-slate-300">Minimum Guaranteed Items</span>
               <div class="flex items-center gap-1.5">
-                <input type="number" id="minItemsInput" min="0" max="4" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
+                <input type="number" id="minItemsInput" min="0" max="10" value="1" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-center text-amber-500 focus:outline-none font-bold" />
               </div>
             </div>
-            <input type="range" id="minItemsSlider" min="0" max="4" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
+            <input type="range" id="minItemsSlider" min="0" max="10" value="1" class="w-full accent-amber-500 bg-slate-950 h-1 rounded cursor-pointer" />
           </div>
         </div>
       </section>
@@ -345,7 +342,7 @@
           <!-- T2 Scaling -->
           <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
             <div class="flex items-center justify-between mb-1">
-              <span class="font-semibold text-slate-300 text-amber-500">Tier 2 (Level 20-34)</span>
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 2 (Level 20-49)</span>
             </div>
             <div class="flex items-center justify-between">
               <span class="text-slate-400">Playtime Multiplier</span>
@@ -368,7 +365,7 @@
           <!-- T3 Scaling -->
           <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
             <div class="flex items-center justify-between mb-1">
-              <span class="font-semibold text-slate-300 text-amber-500">Tier 3 (Level 35-49)</span>
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 3 (Level 50-79)</span>
             </div>
             <div class="flex items-center justify-between">
               <span class="text-slate-400">Playtime Multiplier</span>
@@ -391,7 +388,7 @@
           <!-- T4 Scaling -->
           <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
             <div class="flex items-center justify-between mb-1">
-              <span class="font-semibold text-slate-300 text-amber-500">Tier 4 (Level 50-79)</span>
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 4 (Level 80-119)</span>
             </div>
             <div class="flex items-center justify-between">
               <span class="text-slate-400">Playtime Multiplier</span>
@@ -414,7 +411,7 @@
           <!-- T5 Scaling -->
           <div class="flex flex-col gap-1.5 border-b border-slate-900 pb-3">
             <div class="flex items-center justify-between mb-1">
-              <span class="font-semibold text-slate-300 text-amber-500">Tier 5 (Level 80-149)</span>
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 5 (Level 120-149)</span>
             </div>
             <div class="flex items-center justify-between">
               <span class="text-slate-400">Playtime Multiplier</span>
@@ -437,7 +434,7 @@
           <!-- T6 Scaling -->
           <div class="flex flex-col gap-1.5">
             <div class="flex items-center justify-between mb-1">
-              <span class="font-semibold text-slate-300 text-amber-500">Tier 6 (Level 150+)</span>
+              <span class="font-semibold text-slate-300 text-amber-500">Tier 6 (Level 150-200)</span>
             </div>
             <div class="flex items-center justify-between">
               <span class="text-slate-400">Playtime Multiplier</span>
@@ -476,7 +473,7 @@ cd runtime/addons/installed/dune-airdrop-addon/daemon/
 docker build -t airdrop-daemon .
 
 # 3. Start the background container (Note: You may need --group-add to allow docker socket access)
-docker rm -f airdrop-daemon 2>/dev/null || true
+docker rm -f airdrop-daemon
 docker run -d \
   --name airdrop-daemon \
   --network host \
