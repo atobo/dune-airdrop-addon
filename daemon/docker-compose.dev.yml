@@ -1,0 +1,15 @@
+# Development/example deployment only. Do not apply this to an existing
+# production service without reviewing the host paths and UID/GID values.
+services:
+  airdrop-daemon:
+    build: .
+    user: "${AIRDROP_DAEMON_UID:-1000}:${AIRDROP_DAEMON_GID:-1000}"
+    environment:
+      DUNE_DOCKER_ROOT: /repo
+    volumes:
+      - ${DUNE_DOCKER_ROOT:?set DUNE_DOCKER_ROOT}/.env:/repo/.env:ro
+      - ${DUNE_DOCKER_ROOT:?set DUNE_DOCKER_ROOT}/runtime/data:/repo/runtime/data
+      - ${DUNE_DOCKER_ROOT:?set DUNE_DOCKER_ROOT}/runtime/generated:/repo/runtime/generated
+      - ${DUNE_DOCKER_ROOT:?set DUNE_DOCKER_ROOT}/runtime/scripts:/repo/runtime/scripts:ro
+      - ${DUNE_DOCKER_ROOT:?set DUNE_DOCKER_ROOT}/runtime/secrets:/repo/runtime/secrets:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro

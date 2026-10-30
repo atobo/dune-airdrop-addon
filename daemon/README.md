@@ -21,6 +21,16 @@ The daemon utilizes an event-driven architecture using PostgreSQL's native **`LI
 - Run the schema upgrade before replacing a daemon image. The daemon expects the delivery lifecycle columns and event table supplied by `setup_playtime_airdrops.sql`.
 - Do not run the daemon as root to solve filesystem permissions. Its UID/GID must have write access to the mounted `runtime/generated` directory used by the supported Dune command wrapper.
 
+## Docker permissions
+
+The historical `admin-command-history.tsv: Permission denied` error occurs when
+the daemon's effective container UID/GID cannot write the host-mounted
+`runtime/generated` directory. `docker-compose.dev.yml` supplies that mount and
+runs as `AIRDROP_DAEMON_UID:AIRDROP_DAEMON_GID` (default `1000:1000`), rather
+than root. Before deployment, verify the host ownership with `stat` and use the
+UID/GID that owns that directory. This file is a reviewed deployment example;
+it does not alter an existing container, mount, or host permission.
+
 ## Installation & Usage
 
 1. **Install Dependencies:**
