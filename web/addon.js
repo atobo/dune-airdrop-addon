@@ -32,6 +32,7 @@ const playtimeXpInput = document.getElementById('playtimeXpInput');
 const diagnosticsTableBody = document.getElementById('diagnosticsTableBody');
 const pendingAirdropsTableBody = document.getElementById('pendingAirdropsTableBody');
 const airdropPlayerSelect = document.getElementById('airdropPlayerSelect');
+const deliverySummary = document.getElementById('deliverySummary');
 
 let pendingAirdropsData = [];
 let activeContainerId = null;
@@ -46,31 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const clearQueueBtn = document.getElementById('clearQueueBtn');
   if (clearQueueBtn) {
-    clearQueueBtn.addEventListener('click', async () => {
-      if (isSandboxMode) {
-        showToast('Mock: Queue cleared!', 'success');
-        return;
-      }
-      const pendingCount = pendingAirdropsData.length;
-      if (pendingCount === 0) {
-        showToast('There are no pending airdrops to clear.', 'warning');
-        return;
-      }
-      const confirmed = window.confirm(
-        `Clear ${pendingCount} pending airdrop${pendingCount === 1 ? '' : 's'}? ` +
-        'These rewards have not been confirmed as delivered and cannot be restored from this screen.'
-      );
-      if (!confirmed) return;
-      try {
-        await window.DuneAddon.request("database.execute", {
-          query: 'DELETE FROM dune_airdrop.pending_deliveries WHERE is_applied = false'
-        });
-        showToast('Pending airdrop queue cleared!', 'success');
-        fetchPendingAirdrops();
-      } catch (err) {
-        showToast(`Failed to clear queue: ${err.message}`, 'error');
-      }
-    });
+    clearQueueBtn.addEventListener('click', () => showToast('Queue deletion is disabled. Review individual historical rewards instead.', 'warning'));
   }
 
   if (isSandboxMode) {
@@ -86,10 +63,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       await loadSettings();
       await fetchDiagnostics();
       await fetchPendingAirdrops();
+      await fetchDeliverySummary();
       await fetchContainers();
 
       window.__fetchDiagnosticsInterval = setInterval(fetchDiagnostics, 5000);
       window.__fetchPendingInterval = setInterval(fetchPendingAirdrops, 5000);
+      window.__fetchDeliveryInterval = setInterval(fetchDeliverySummary, 5000);
     } else {
       connectionStatusBadge.textContent = 'Setup Required';
       connectionStatusBadge.className = connectionStatusBadge.className.replace(
@@ -671,7 +650,10 @@ async function fetchPendingAirdrops() {
 
   try {
     const rawList = await window.DuneAddon.request("database.query", {
-      query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size
+      query: `SELECT bpd.id, COALESCE(ps.character_name, 'Unknown') as character_name, bpd.template_id, bpd.stack_size,
+                     COALESCE(bpd.delivery_state, CASE WHEN bpd.is_applied THEN 'DELIVERED' ELSE 'PENDING' END) AS delivery_state,
+                     COALESCE(bpd.requires_recovery_approval, false) AS requires_recovery_approval,
+                     bpd.last_error_code, bpd.next_attempt_at
               FROM dune_airdrop.pending_deliveries bpd
               LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
               WHERE bpd.is_applied = false
@@ -719,10 +701,35 @@ function renderPendingAirdrops() {
     <tr class="border-b border-slate-900/40 hover:bg-slate-900/20 font-mono text-xs">
       <td class="py-1.5 text-slate-300">${escapeHTML(d.character_name)}</td>
       <td class="py-1.5 text-amber-500 font-bold">${escapeHTML(d.template_id)}</td>
-      <td class="py-1.5 text-right text-slate-300 font-bold">${d.stack_size}</td>
+      <td class="py-1.5 text-right text-slate-300 font-bold">${d.stack_size} <span class="text-slate-500">${escapeHTML(d.delivery_state)}</span>${d.requires_recovery_approval && d.delivery_state === 'WAITING_FOR_PLAYER' ? ` <button onclick="window.approveHistoricalDelivery('${escapeHTML(d.id)}')" class="ml-1 text-amber-400 underline">review</button>` : ''}</td>
     </tr>
   `).join('');
 }
+
+async function fetchDeliverySummary() {
+  if (isSandboxMode || !deliverySummary) return;
+  try {
+    const raw = await window.DuneAddon.request('database.query', { query: `
+      SELECT delivery_state, count(*)::int AS count FROM dune_airdrop.pending_deliveries GROUP BY delivery_state
+      UNION ALL SELECT 'PENDING_RECEIPTS', count(*)::int FROM dune_airdrop.delivery_receipts WHERE status = 'PENDING'
+      UNION ALL SELECT 'DAEMON_HEARTBEAT', 0` });
+    const rows = raw.rows || raw || [];
+    const values = Object.fromEntries(rows.map(row => [row.delivery_state, row.count]));
+    deliverySummary.innerHTML = ['READY', 'WAITING_FOR_PLAYER', 'DELIVERING', 'DELIVERED', 'FAILED', 'UNCERTAIN', 'LEGACY_REVIEW', 'PENDING_RECEIPTS']
+      .map(key => `<div class="rounded border border-slate-800 p-2"><span class="block text-slate-500">${escapeHTML(key.replaceAll('_', ' '))}</span><strong>${escapeHTML(values[key] || 0)}</strong></div>`).join('');
+  } catch (error) {
+    deliverySummary.textContent = `Delivery lifecycle status unavailable: ${error.message || error}`;
+  }
+}
+
+window.approveHistoricalDelivery = async function(id) {
+  if (!/^\d+$/.test(String(id))) return;
+  if (!window.confirm('Approve this one historical reward only after confirming it was never delivered? Uncertain deliveries must not be approved.')) return;
+  try {
+    await window.DuneAddon.request('database.execute', { query: `UPDATE dune_airdrop.pending_deliveries SET requires_recovery_approval = false, recovery_approved_at = NOW(), updated_at = NOW() WHERE id = ${id}::int AND delivery_state = 'WAITING_FOR_PLAYER' AND requires_recovery_approval = true; INSERT INTO dune_airdrop.delivery_events (delivery_id, state, detail) SELECT ${id}::int, 'WAITING_FOR_PLAYER', 'Historical recovery approved by administrator.' WHERE EXISTS (SELECT 1 FROM dune_airdrop.pending_deliveries WHERE id = ${id}::int AND recovery_approved_at IS NOT NULL);` });
+    showToast('Historical reward approved for normal offline-aware delivery.', 'success'); fetchPendingAirdrops(); fetchDeliverySummary();
+  } catch (error) { showToast(`Recovery approval failed: ${error.message || error}`, 'error'); }
+};
 
 async function fetchContainers() {
   if (isSandboxMode) return;

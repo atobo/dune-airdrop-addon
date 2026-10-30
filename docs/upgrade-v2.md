@@ -13,6 +13,15 @@ or playtime.
 4. Apply `setup_playtime_airdrops.sql` once through the addon only while the
    battlegroup is stopped, then start a daemon built from the same release.
 
+## Preflight
+
+Before migration, verify that the addon has `database:read` and `database:write`
+approved, that `dune.player_state`, `dune.actors`, and `dune.accounts` exist,
+and that the daemon's non-root UID can write the command-history destination.
+Review unresolved player identities and pending/uncertain receipts first. Do
+not approve a historical delivery unless independent evidence shows it was not
+already granted.
+
 ## Migration behaviour
 
 The migration adds delivery state, attempts, retry scheduling, timestamps, a
