@@ -28,9 +28,10 @@ python3 scripts/create_zip.py "dist/${PACKAGE_NAME}" \
   web/addon.css web/addon.js web/dune-addon-bridge.js \
   web/grant_logic.js web/index.html web/style.css \
   daemon/.dockerignore daemon/Dockerfile daemon/README.md \
-  daemon/index.js daemon/databaseConfig.js daemon/deliveryResult.js \
+  daemon/index.js daemon/databaseConfig.js daemon/deliveryResult.js daemon/deliveryState.js \
   daemon/package.json daemon/package-lock.json \
-  setup_playtime_airdrops.sql uninstall_playtime_airdrops.sql README.md
+  setup_playtime_airdrops.sql uninstall_playtime_airdrops.sql README.md \
+  docs/upgrade-v2.md
 
 echo "Created: dist/${PACKAGE_NAME}"
 

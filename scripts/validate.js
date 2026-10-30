@@ -110,6 +110,7 @@ function validateRuntimeFiles() {
     "daemon/package-lock.json",
     "daemon/index.js",
     "daemon/databaseConfig.js",
+    "daemon/deliveryState.js",
     "scripts/create_zip.py"
   ];
   for (const relativePath of requiredFiles) {

@@ -2415,4 +2415,76 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Delivery lifecycle v2 migration. This is additive and deliberately holds
+-- historical undelivered rewards for explicit administrator recovery rather
+-- than replaying them automatically after a daemon upgrade.
+ALTER TABLE dune_airdrop.pending_deliveries
+  ADD COLUMN IF NOT EXISTS delivery_state TEXT NOT NULL DEFAULT 'READY',
+  ADD COLUMN IF NOT EXISTS delivery_attempts INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS last_error_code TEXT,
+  ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS requires_recovery_approval BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS recovery_approved_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE dune_airdrop.delivery_receipts
+  ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+
+CREATE TABLE IF NOT EXISTS dune_airdrop.delivery_events (
+  id BIGSERIAL PRIMARY KEY,
+  delivery_id INT NOT NULL,
+  state TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS delivery_events_delivery_id_idx
+  ON dune_airdrop.delivery_events (delivery_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS pending_deliveries_dispatch_idx
+  ON dune_airdrop.pending_deliveries (requires_recovery_approval, delivery_state, next_attempt_at, created_at, id)
+  WHERE is_applied = FALSE;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM dune_airdrop.config WHERE config_key = 'delivery_lifecycle_v2_migrated') THEN
+    UPDATE dune_airdrop.pending_deliveries pending
+    SET delivery_state = CASE
+          WHEN receipt.status = 'SUCCESS' THEN 'DELIVERED'
+          WHEN receipt.status IN ('PENDING', 'UNCERTAIN') THEN 'UNCERTAIN'
+          WHEN pending.is_applied THEN 'LEGACY_REVIEW'
+          ELSE 'WAITING_FOR_PLAYER'
+        END,
+        requires_recovery_approval = NOT pending.is_applied,
+        next_attempt_at = CASE WHEN pending.is_applied THEN NULL ELSE NOW() END,
+        last_error_code = CASE
+          WHEN receipt.status = 'PENDING' THEN 'LEGACY_PENDING_RECEIPT'
+          WHEN receipt.status = 'UNCERTAIN' THEN 'LEGACY_UNCERTAIN_RECEIPT'
+          WHEN pending.is_applied THEN 'LEGACY_APPLIED_UNVERIFIED'
+          ELSE 'LEGACY_RECOVERY_REQUIRES_APPROVAL'
+        END,
+        last_error_at = CASE WHEN pending.is_applied AND receipt.status = 'SUCCESS' THEN NULL ELSE NOW() END,
+        updated_at = NOW()
+    FROM (SELECT request_id, status FROM dune_airdrop.delivery_receipts) receipt
+    WHERE receipt.request_id = pending.request_id;
+
+    UPDATE dune_airdrop.pending_deliveries pending
+    SET delivery_state = CASE WHEN pending.is_applied THEN 'LEGACY_REVIEW' ELSE 'WAITING_FOR_PLAYER' END,
+        requires_recovery_approval = NOT pending.is_applied,
+        next_attempt_at = CASE WHEN pending.is_applied THEN NULL ELSE NOW() END,
+        last_error_code = CASE WHEN pending.is_applied THEN 'LEGACY_APPLIED_UNVERIFIED' ELSE 'LEGACY_RECOVERY_REQUIRES_APPROVAL' END,
+        last_error_at = NOW(), updated_at = NOW()
+    WHERE NOT EXISTS (SELECT 1 FROM dune_airdrop.delivery_receipts receipt WHERE receipt.request_id = pending.request_id);
+
+    UPDATE dune_airdrop.delivery_receipts
+    SET status = 'UNCERTAIN', status_updated_at = NOW(),
+        failure_reason = COALESCE(failure_reason, 'Historical pending receipt requires administrator reconciliation.')
+    WHERE status = 'PENDING';
+
+    INSERT INTO dune_airdrop.config (config_key, config_value)
+    VALUES ('delivery_lifecycle_v2_migrated', jsonb_build_object('completed_at', NOW(), 'policy', 'historical rewards require explicit recovery approval'));
+  END IF;
+END;
+$$;
+
 RESET ROLE;
