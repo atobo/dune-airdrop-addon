@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 import { buildDatabaseConfig, parseEnvFile } from "./databaseConfig.js";
 import { DeliveryState, classifyDeliveryResult, retryDelaySeconds } from "./deliveryState.js";
 import { resolveGrantIdentity } from "./identityAdapter.js";
@@ -150,6 +150,8 @@ async function start() {
   }, 15000);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) start().catch((error) => { console.error("Airdrop daemon failed to start:", error.message || error); process.exit(1); });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  start().catch((error) => { console.error("Airdrop daemon failed to start:", error.message || error); process.exit(1); });
+}
 
-export { pool, resolveIdentity, claimDelivery, prepareDelivery, finalizeDelivery, tick };
+export { pool, resolveIdentity, claimDelivery, prepareDelivery, finalizeDelivery, tick, start };

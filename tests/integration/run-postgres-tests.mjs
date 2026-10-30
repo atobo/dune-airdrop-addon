@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { spawn } from "node:child_process";
 import pg from "../../daemon/node_modules/pg/lib/index.js";
 
 const url = process.env.AIRDROP_TEST_DATABASE_URL;
@@ -44,8 +46,61 @@ async function check(label) {
   assert.equal((await q("SELECT config_value FROM dune_airdrop.config WHERE config_key='custom_setting'")).rows[0].config_value.keep, true);
   assert.equal((await q("SELECT weight FROM dune_airdrop.loot_tables WHERE template_id='CustomLoot'")).rows[0].weight, 77);
 }
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+async function waitFor(checker, message, timeout = 10000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) { if (await checker()) return; await sleep(50); }
+  throw new Error(message);
+}
+function launchDaemon(runtime, extra = {}) {
+  const child = spawn(process.execPath, [path.join(root, "tests/integration/daemon-child.mjs")], {
+    env: { ...process.env, DATABASE_URL: url, DUNE_DOCKER_ROOT: runtime, ...extra },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  child.output = "";
+  child.stdout.on("data", chunk => { child.output += chunk; });
+  child.stderr.on("data", chunk => { child.output += chunk; });
+  child.on("error", error => { child.output += `spawn error: ${error.message}`; });
+  return child;
+}
+async function stop(child) {
+  if (!child || child.exitCode !== null) return;
+  child.kill("SIGKILL"); await new Promise(resolve => child.once("exit", resolve));
+}
+async function daemonProcessTests() {
+  await reset(); await q(sql);
+  await q("INSERT INTO dune.accounts (id, \"user\") VALUES (1001, 'abcdef012345678'); INSERT INTO dune.actors (id, owner_account_id, class) VALUES (2001, 1001, 'PlayerCharacter'); INSERT INTO dune.player_state (account_id, player_pawn_id, online_status) VALUES (1001, 2001, 'Online')");
+  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), "airdrop-daemon-test-"));
+  const scripts = path.join(runtime, "runtime/scripts"); fs.mkdirSync(scripts, { recursive: true }); fs.writeFileSync(path.join(runtime, ".env"), "");
+  const counter = path.join(runtime, "commands.log");
+  fs.writeFileSync(path.join(scripts, "dune"), "#!/bin/sh\necho \"$@\" >> \"$AIRDROP_TEST_COUNTER\"\nif [ -n \"$AIRDROP_TEST_SLOW\" ]; then sleep \"$AIRDROP_TEST_SLOW\"; fi\n", { mode: 0o755 });
+  const count = () => fs.existsSync(counter) ? fs.readFileSync(counter, "utf8").trim().split("\n").filter(Boolean).length : 0;
+  let child;
+  try {
+    await q("INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size) VALUES (1001, 'SuccessItem', 1)");
+    child = launchDaemon(runtime, { AIRDROP_TEST_COUNTER: counter });
+    await waitFor(async () => (await q("SELECT count(*)::int AS n FROM dune_airdrop.delivery_receipts WHERE status='SUCCESS'")).rows[0].n === 1, `successful command was not finalized (exit=${child.exitCode}, signal=${child.signalCode}, queue=${JSON.stringify((await q("SELECT template_id, delivery_state, requires_recovery_approval FROM dune_airdrop.pending_deliveries")).rows)}): ${child.output}`);
+    assert.equal(count(), 1, "success must invoke exactly one command"); await stop(child);
+    await q("INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size) VALUES (1001, 'CrashItem', 1)");
+    child = launchDaemon(runtime, { AIRDROP_TEST_COUNTER: counter, AIRDROP_TEST_SLOW: "30" });
+    await waitFor(() => count() === 2, "slow command was not submitted before termination");
+    await stop(child);
+    const stranded = await q("SELECT id, delivery_state FROM dune_airdrop.pending_deliveries WHERE template_id='CrashItem'");
+    assert.equal(stranded.rows[0].delivery_state, "DELIVERING");
+    await q("UPDATE dune_airdrop.pending_deliveries SET locked_at = NOW() - INTERVAL '6 minutes' WHERE id=$1", [stranded.rows[0].id]);
+    child = launchDaemon(runtime, { AIRDROP_TEST_COUNTER: counter });
+    await waitFor(async () => (await q("SELECT delivery_state FROM dune_airdrop.pending_deliveries WHERE id=$1", [stranded.rows[0].id])).rows[0].delivery_state === "UNCERTAIN", "expired command lease was not quarantined");
+    assert.equal(count(), 2, "an uncertain post-command delivery must never be replayed"); await stop(child);
+    await q("INSERT INTO dune_airdrop.pending_deliveries (account_id, template_id, stack_size) VALUES (1001, 'ConcurrentA', 1), (1001, 'ConcurrentB', 1)");
+    const first = launchDaemon(runtime, { AIRDROP_TEST_COUNTER: counter }); const second = launchDaemon(runtime, { AIRDROP_TEST_COUNTER: counter });
+    await waitFor(async () => (await q("SELECT count(*)::int AS n FROM dune_airdrop.delivery_receipts WHERE status='SUCCESS'")).rows[0].n === 3, "concurrent workers did not deliver distinct queue rows");
+    assert.equal(count(), 4, "two workers must issue one command each for two distinct rewards"); await stop(first); await stop(second);
+    console.log("Daemon process integration: success, SIGKILL after command, lease quarantine, and concurrent workers passed (4 commands).");
+  } finally { await stop(child); fs.rmSync(runtime, { recursive: true, force: true }); }
+}
 try {
   await client.connect();
   for (const version of ["v137", "v136"]) { await reset(); await fixture(version); await q(sql); await check(version); await q(sql); await check(`${version} rerun`); }
+  if (process.env.AIRDROP_RUN_PROCESS_TESTS === "1") await daemonProcessTests();
   console.log("PostgreSQL migration integration: 2 verified historical fixtures, initial migration and rerun passed.");
 } finally { await client.end(); }

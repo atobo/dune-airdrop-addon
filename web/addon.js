@@ -657,7 +657,8 @@ async function fetchPendingAirdrops() {
               FROM dune_airdrop.pending_deliveries bpd
               LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
               WHERE bpd.is_applied = false
-              ORDER BY bpd.created_at DESC`
+              ORDER BY bpd.created_at DESC
+              LIMIT 500`
     });
     const list = rawList.rows || rawList || [];
 
@@ -726,7 +727,7 @@ window.approveHistoricalDelivery = async function(id) {
   if (!/^\d+$/.test(String(id))) return;
   if (!window.confirm('Approve this one historical reward only after confirming it was never delivered? Uncertain deliveries must not be approved.')) return;
   try {
-    await window.DuneAddon.request('database.execute', { query: `UPDATE dune_airdrop.pending_deliveries SET requires_recovery_approval = false, recovery_approved_at = NOW(), updated_at = NOW() WHERE id = ${id}::int AND delivery_state = 'WAITING_FOR_PLAYER' AND requires_recovery_approval = true; INSERT INTO dune_airdrop.delivery_events (delivery_id, state, detail) SELECT ${id}::int, 'WAITING_FOR_PLAYER', 'Historical recovery approved by administrator.' WHERE EXISTS (SELECT 1 FROM dune_airdrop.pending_deliveries WHERE id = ${id}::int AND recovery_approved_at IS NOT NULL);` });
+    await window.DuneAddon.request('database.execute', { query: `WITH approved AS (UPDATE dune_airdrop.pending_deliveries SET requires_recovery_approval = false, recovery_approved_at = NOW(), updated_at = NOW() WHERE id = ${id}::int AND delivery_state = 'WAITING_FOR_PLAYER' AND requires_recovery_approval = true RETURNING id) INSERT INTO dune_airdrop.delivery_events (delivery_id, state, detail) SELECT id, 'WAITING_FOR_PLAYER', 'Historical recovery approved by administrator.' FROM approved;` });
     showToast('Historical reward approved for normal offline-aware delivery.', 'success'); fetchPendingAirdrops(); fetchDeliverySummary();
   } catch (error) { showToast(`Recovery approval failed: ${error.message || error}`, 'error'); }
 };
