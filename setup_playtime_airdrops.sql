@@ -2448,7 +2448,9 @@ CREATE TABLE IF NOT EXISTS dune_airdrop.delivery_events (
 );
 CREATE INDEX IF NOT EXISTS delivery_events_delivery_id_idx
   ON dune_airdrop.delivery_events (delivery_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS pending_deliveries_dispatch_idx
+-- Keep the older dispatch index intact on upgrade. A separate name makes the
+-- resolution-aware predicate effective even when that historical index exists.
+CREATE INDEX IF NOT EXISTS pending_deliveries_dispatch_resolution_idx
   ON dune_airdrop.pending_deliveries (requires_recovery_approval, delivery_state, next_attempt_at, created_at, id)
   WHERE is_applied = FALSE AND resolution_status IS NULL;
 
