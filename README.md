@@ -41,6 +41,8 @@ historical-migration test boundary.
 
 The console addon is an iframe and cannot run unattended delivery. Deploy the
 included daemon only after reviewing its mounts and Docker-socket access.
+The supplied compose definition uses host networking because the standard
+self-hosted PostgreSQL endpoint is host-local.
 
 From the daemon directory in the installed addon, use the included example
 compose file with an absolute path to the Dune server repository:
@@ -57,7 +59,7 @@ Verify the daemon and inspect its logs:
 
 ```bash
 docker ps --filter name=airdrop-daemon
-docker logs -f airdrop-daemon
+docker compose -f docker-compose.dev.yml logs -f airdrop-daemon
 ```
 
 To update it, stop the existing container, complete the schema upgrade, then

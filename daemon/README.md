@@ -49,5 +49,10 @@ an upgrade, stop the old daemon, complete the addon schema upgrade, then build
 and start the daemon from the matching release. Do not run two daemon versions
 against the same queue.
 
-The compose file is an example deployment definition. Review every mount and
-the Docker-socket risk for the host before using it.
+The compose file intentionally uses host networking because the standard
+self-hosted PostgreSQL endpoint is host-local. Review every mount and the
+Docker-socket risk for the host before using it. Follow logs with:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f airdrop-daemon
+```

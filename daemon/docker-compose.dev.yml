@@ -3,6 +3,10 @@
 services:
   airdrop-daemon:
     build: .
+    # The standard self-hosted PostgreSQL endpoint is host-local (127.0.0.1).
+    # The daemon must share the host network to reach that endpoint.
+    network_mode: host
+    restart: unless-stopped
     user: "${AIRDROP_DAEMON_UID:-1000}:${AIRDROP_DAEMON_GID:-1000}"
     environment:
       DUNE_DOCKER_ROOT: /repo

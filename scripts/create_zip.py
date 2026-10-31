@@ -32,8 +32,12 @@ def main():
         for relative in files:
             source = root / relative
             info = zipfile.ZipInfo(relative.as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
-            mode = source.stat().st_mode
-            info.external_attr = (stat.S_IMODE(mode) & 0xFFFF) << 16
+            # Release files must be readable after extraction even when the
+            # source checkout contains owner-only modes. Explicitly encode a
+            # regular Unix file with world-readable permissions rather than
+            # inheriting workstation-specific modes into the archive.
+            info.create_system = 3
+            info.external_attr = (stat.S_IFREG | 0o644) << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, source.read_bytes())
 
