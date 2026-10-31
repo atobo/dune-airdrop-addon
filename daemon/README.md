@@ -31,6 +31,11 @@ than root. Before deployment, verify the host ownership with `stat` and use the
 UID/GID that owns that directory. This file is a reviewed deployment example;
 it does not alter an existing container, mount, or host permission.
 
+The Dune command wrapper also uses Docker to query PostgreSQL and publish an
+item grant. Set `DOCKER_SOCKET_GID` to the group ID of `/var/run/docker.sock`;
+the compose file adds that group to the non-root daemon process. Do not replace
+this with root execution.
+
 ## Installation and update
 
 Use the reviewed Docker example rather than installing dependencies directly
@@ -40,6 +45,7 @@ on the host. From the installed addon directory:
 export DUNE_DOCKER_ROOT=/absolute/path/to/dune-awakening-selfhost-docker
 export AIRDROP_DAEMON_UID="$(id -u)"
 export AIRDROP_DAEMON_GID="$(id -g)"
+export DOCKER_SOCKET_GID="$(stat -c '%g' /var/run/docker.sock)"
 cd "$DUNE_DOCKER_ROOT/runtime/addons/installed/dune-airdrop-addon/daemon"
 docker compose -f docker-compose.dev.yml up -d --build
 ```

@@ -8,6 +8,10 @@ services:
     network_mode: host
     restart: unless-stopped
     user: "${AIRDROP_DAEMON_UID:-1000}:${AIRDROP_DAEMON_GID:-1000}"
+    # The Dune command wrapper uses Docker to query PostgreSQL and publish the
+    # verified grant. Give the non-root daemon only the host Docker-socket GID.
+    group_add:
+      - "${DOCKER_SOCKET_GID:?set DOCKER_SOCKET_GID to stat -c '%g' /var/run/docker.sock}"
     environment:
       DUNE_DOCKER_ROOT: /repo
     volumes:

@@ -51,6 +51,7 @@ compose file with an absolute path to the Dune server repository:
 export DUNE_DOCKER_ROOT=/absolute/path/to/dune-awakening-selfhost-docker
 export AIRDROP_DAEMON_UID="$(id -u)"
 export AIRDROP_DAEMON_GID="$(id -g)"
+export DOCKER_SOCKET_GID="$(stat -c '%g' /var/run/docker.sock)"
 cd "$DUNE_DOCKER_ROOT/runtime/addons/installed/dune-airdrop-addon/daemon"
 docker compose -f docker-compose.dev.yml up -d --build
 ```
@@ -65,7 +66,9 @@ docker compose -f docker-compose.dev.yml logs -f airdrop-daemon
 To update it, stop the existing container, complete the schema upgrade, then
 run the same command from the newly installed addon directory. Do not run the
 daemon as root to solve a permissions error; set `AIRDROP_DAEMON_UID` and
-`AIRDROP_DAEMON_GID` to an account that can write `runtime/generated`.
+`AIRDROP_DAEMON_GID` to an account that can write `runtime/generated`. Also
+set `DOCKER_SOCKET_GID` to the host Docker socket group so the non-root daemon
+can use the supported Dune command wrapper.
 
 ## Offline, recovery, and uncertain rewards
 
