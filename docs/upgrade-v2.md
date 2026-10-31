@@ -1,6 +1,6 @@
 # Safe upgrade and recovery
 
-Version 1.4.0 of the delivery lifecycle is an in-place, additive upgrade. It does
+Version 1.4.1 of the delivery lifecycle is an in-place, additive upgrade. It does
 not delete queues, receipts, settings, loot tables, activity records, streaks,
 or playtime.
 
@@ -42,7 +42,7 @@ historic command into a duplicate reward.
 
 ## Supported historical evidence and limitations
 
-The v1.4.0 migration was exercised against representative historical schema
+The v1.4.0 delivery-state migration was exercised against representative historical schema
 fixtures for the v1.3.6 and v1.3.7 layouts, including pending rewards,
 delivered and pending receipts, custom configuration, loot tables, playtime,
 login streaks, and weekly progress. Initial migration and a rerun preserved
@@ -54,6 +54,15 @@ unsupported historical shape: take a verified backup, inspect the schema and
 record counts, and do not proceed if the migration reports an unexpected
 structure. Preserve unmappable records for administrator review; do not delete
 or recreate them to force an upgrade.
+
+## v1.4.1 notes
+
+v1.4.1 adds additive resolution fields and dispatch indexing for queue review;
+run **INIT SCHEMA** after installing it, with the daemon stopped as described
+above. It also corrects the default loot-pool classification for a small set of
+reviewed resource and component entries. The setup script updates only those
+named default entries and does not clear custom loot tables, queue rows,
+receipts, activity, streaks, or settings.
 
 ## Recovery
 
