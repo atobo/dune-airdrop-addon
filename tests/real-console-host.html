@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Airdrop real console bridge fixture</title>
+<style>html,body,iframe{width:100%;height:100%;margin:0;border:0}</style>
+<iframe id="addon" src="/api/addons/installed/dune-airdrop-addon/content/web/index.html"></iframe>
+<script>
+  window.__bridgeLog = [];
+  window.__bridgeFailure = false;
+  addEventListener('message', async (event) => {
+    const message = event.data || {};
+    if (message.type !== 'dune-addon-request') return;
+    const entry = { action: message.action, query: message.payload?.query || '', ok: false };
+    window.__bridgeLog.push(entry);
+    if (window.__bridgeFailure) return;
+    try {
+      const response = await fetch('/api/addons/installed/dune-airdrop-addon/bridge', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: message.action, ...message.payload })
+      });
+      const payload = await response.json();
+      entry.status = response.status;
+      entry.ok = response.ok && payload.ok !== false;
+      event.source.postMessage({
+        type: 'dune-addon-response', addonId: message.addonId,
+        requestId: message.requestId, ok: entry.ok,
+        result: payload.result, error: payload.error || `HTTP ${response.status}`
+      }, event.origin);
+    } catch (error) {
+      entry.error = String(error);
+      event.source.postMessage({
+        type: 'dune-addon-response', addonId: message.addonId,
+        requestId: message.requestId, ok: false, error: String(error)
+      }, event.origin);
+    }
+  });
+</script>

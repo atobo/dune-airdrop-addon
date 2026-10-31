@@ -64,8 +64,10 @@ function launchDaemon(runtime, extra = {}) {
   return child;
 }
 async function stop(child) {
-  if (!child || child.exitCode !== null) return;
-  child.kill("SIGKILL"); await new Promise(resolve => child.once("exit", resolve));
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise(resolve => child.once("exit", resolve));
+  child.kill("SIGKILL");
+  if (child.exitCode === null) await exited;
 }
 async function daemonProcessTests() {
   await reset(); await q(sql);

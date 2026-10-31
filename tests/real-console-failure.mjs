@@ -1,0 +1,23 @@
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+
+const baseUrl = process.env.AIRDROP_CONSOLE_URL || 'http://console-api:8088';
+const expected = new RegExp(process.env.AIRDROP_EXPECTED_ERROR || 'failed', 'i');
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+await page.goto(`${baseUrl}/real-console-host.html`, { waitUntil: 'domcontentloaded' });
+const addon = page.frameLocator('#addon');
+const review = addon.getByRole('button', { name: 'review' }).first();
+await review.waitFor({ state: 'visible', timeout: 30000 });
+const template = (await review.locator('xpath=ancestor::tr/td[2]').textContent())?.trim();
+page.on('dialog', dialog => dialog.accept());
+await review.click();
+const toast = addon.locator('#toastContainer > div').filter({ hasText: 'Recovery approval failed:' }).last();
+await toast.waitFor({ state: 'visible', timeout: 30000 });
+const message = await toast.textContent();
+assert.match(message || '', expected);
+const bridgeLog = await page.evaluate(() => window.__bridgeLog);
+const write = bridgeLog.find(entry => entry.action === 'database.execute');
+assert.equal(write?.ok, false);
+console.log(JSON.stringify({ template, message, write }, null, 2));
+await browser.close();
