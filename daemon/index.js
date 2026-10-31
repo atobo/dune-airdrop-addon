@@ -40,8 +40,8 @@ async function recoverExpiredLeases(client) {
   const result = await client.query(`
     UPDATE dune_airdrop.pending_deliveries
     SET delivery_state = $1, locked_at = NULL, last_error_code = 'ABANDONED_DELIVERY', last_error_at = NOW(), updated_at = NOW()
-    WHERE delivery_state = $2 AND locked_at < NOW() - ($3::text || ' seconds')::interval
-    RETURNING id, request_id`, [DeliveryState.UNCERTAIN, DeliveryState.DELIVERING, String(LEASE_SECONDS)]);
+    WHERE delivery_state = $2 AND locked_at < NOW() - INTERVAL '5 minutes'
+    RETURNING id, request_id`, [DeliveryState.UNCERTAIN, DeliveryState.DELIVERING]);
   for (const row of result.rows) {
     await client.query("UPDATE dune_airdrop.delivery_receipts SET status = 'UNCERTAIN', status_updated_at = NOW(), failure_reason = 'Daemon lease expired after command preparation.' WHERE request_id = $1 AND status = 'PENDING'", [row.request_id]);
     await appendEvent(client, row.id, DeliveryState.UNCERTAIN, "Daemon lease expired; administrator reconciliation required.");
@@ -99,7 +99,7 @@ async function finalizeDelivery(delivery, outcome, result) {
   try {
     await client.query("BEGIN");
     const delay = outcome.state === DeliveryState.WAITING_FOR_PLAYER ? "NOW() + INTERVAL '5 minutes'" : outcome.state === DeliveryState.RETRY_WAIT ? `NOW() + INTERVAL '${retryDelaySeconds(delivery.delivery_attempts)} seconds'` : "NULL";
-    await client.query(`UPDATE dune_airdrop.pending_deliveries SET delivery_state = $1, is_applied = $2, locked_at = NULL, next_attempt_at = ${delay}, last_error_code = $3, last_error_at = CASE WHEN $3 IS NULL THEN NULL ELSE NOW() END, updated_at = NOW() WHERE id = $4 AND delivery_state = $5`, [outcome.state, outcome.state === DeliveryState.DELIVERED, outcome.code === "VERIFIED" ? null : outcome.code, delivery.id, DeliveryState.DELIVERING]);
+    await client.query(`UPDATE dune_airdrop.pending_deliveries SET delivery_state = $1, is_applied = $2, locked_at = NULL, next_attempt_at = ${delay}, last_error_code = $3::text, last_error_at = CASE WHEN $3::text IS NULL THEN NULL ELSE NOW() END, updated_at = NOW() WHERE id = $4 AND delivery_state = $5`, [outcome.state, outcome.state === DeliveryState.DELIVERED, outcome.code === "VERIFIED" ? null : outcome.code, delivery.id, DeliveryState.DELIVERING]);
     const receiptStatus = outcome.state === DeliveryState.DELIVERED ? "SUCCESS" : outcome.state;
     await client.query("UPDATE dune_airdrop.delivery_receipts SET status = $1, granted_at = CASE WHEN $1 = 'SUCCESS' THEN NOW() ELSE granted_at END, status_updated_at = NOW(), failure_reason = $2 WHERE request_id = $3", [receiptStatus, outcome.code === "VERIFIED" ? null : resultDetail(result), delivery.request_id]);
     await appendEvent(client, delivery.id, outcome.state, outcome.code);

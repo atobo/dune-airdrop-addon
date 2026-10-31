@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "${AIRDROP_TEST_COUNTER:-/repo/runtime/generated/commands.log}"
