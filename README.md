@@ -2,97 +2,88 @@
 
 ![Dune Airdrop Concept Art](assets/dune_airdrop_art.png)
 
-A powerful, customizable, and automated playtime tracking and rewards system for Dune Awakening self-hosted servers, designed exclusively for the RedBlink Console.
+**Version 1.4.0** is a RedBlink Dune Docker Console addon for playtime,
+daily-login, and weekly-attendance rewards. The console UI manages settings,
+queue review, and recovery approval. A separately deployed companion daemon
+delivers eligible rewards while players are online.
 
-## Features
-- **Real-Time Playtime Tracking:** Automatically tracks active online playtime, verifying movement and map coordinates to prevent AFK exploitation.
-- **Dynamic Reward Scaling:** Scales XP or item drops based on consecutive hours played.
-- **Daily & Weekly Login Rewards:** Calculates and manages sequential daily login streaks and weekly activity thresholds.
-- **Node.js Delivery Daemon:** A lightweight external service that interfaces with PostgreSQL Pub/Sub to instantly deliver items in-game via RCON with a smart 60-second loading screen delay and offline retry loop.
+## Before installation
 
-## 1. Installation
+- Back up the Dune database before a first install or upgrade.
+- The addon requires approved `database:read` and `database:write`
+  permissions. They are required for schema setup, settings, queue visibility,
+  and recovery approval.
+- `admin:grant-items` is requested for the UI's manual-grant function only.
+  Approve it only if that feature is wanted; it is not required for normal
+  queue recovery or the companion daemon.
+- Automated delivery requires the companion daemon. It invokes the supported
+  `dune admin grant-item-id` command and therefore needs carefully reviewed
+  access to the host's Docker socket and Dune runtime files.
 
-1. Copy the `dune-airdrop-addon` folder into your `runtime/addons/installed/` directory.
-2. Stop the battlegroup so setup can safely replace the player-state trigger.
-3. In the RedBlink UI, click **INIT SCHEMA** and wait for it to complete.
-4. Start the battlegroup again.
+## Install or upgrade
 
-## 2. Running the Daemon
+1. In Dune Docker Console, install the release ZIP through **Addons**, or have
+   the console administrator stage the unpacked addon under
+   `runtime/addons/installed/dune-airdrop-addon/`.
+2. Approve `database:read` and `database:write`. Do not grant
+   `admin:grant-items` unless manual grants are deliberately enabled.
+3. For an upgrade, stop the existing `airdrop-daemon` first. Do not clear the
+   queue, receipts, configuration, or activity tables.
+4. Stop the battlegroup, open **Airdrop Manager**, and select **INIT SCHEMA**.
+   Wait for success before starting the battlegroup and the matching v1.4.0
+   daemon image.
 
-Because RedBlink addons are UI-only, this addon requires a **Companion-Service Setup**. The companion Node daemon must be built and run manually using Docker on your host machine so it can monitor the database and execute RCON commands.
+Read [Safe upgrade and recovery](docs/upgrade-v2.md) before upgrading an
+existing installation. It covers backup, recovery approval, rollback, and the
+historical-migration test boundary.
 
-### Start the Daemon
-From the root of your Dune server repository, run:
+## Companion daemon
+
+The console addon is an iframe and cannot run unattended delivery. Deploy the
+included daemon only after reviewing its mounts and Docker-socket access.
+
+From the daemon directory in the installed addon, use the included example
+compose file with an absolute path to the Dune server repository:
+
 ```bash
-cd runtime/addons/installed/dune-airdrop-addon/daemon
-docker build -t airdrop-daemon .
-docker rm -f airdrop-daemon 2>/dev/null || true
-# Note: You may need to add --group-add <docker-gid> to allow the non-root container user to access the docker socket
-docker run -d \
-  --name airdrop-daemon \
-  --network host \
-  --restart unless-stopped \
-  --user "$(id -u):$(id -g)" \
-  --group-add "$(stat -c '%g' /var/run/docker.sock)" \
-  -e DUNE_DOCKER_ROOT=/repo \
-  -v "$PWD/../../../../../runtime/scripts:/repo/runtime/scripts:ro" \
-  -v "$PWD/../../../../../runtime/data:/repo/runtime/data:ro" \
-  -v "$PWD/../../../../../runtime/secrets:/repo/runtime/secrets:ro" \
-  -v "$PWD/../../../../../runtime/generated:/repo/runtime/generated:rw" \
-  -v "$PWD/../../../../../.env:/repo/.env:ro" \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  airdrop-daemon
+export DUNE_DOCKER_ROOT=/absolute/path/to/dune-awakening-selfhost-docker
+export AIRDROP_DAEMON_UID="$(id -u)"
+export AIRDROP_DAEMON_GID="$(id -g)"
+cd "$DUNE_DOCKER_ROOT/runtime/addons/installed/dune-airdrop-addon/daemon"
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-**Why does this require Docker socket access?**
-The current Dune Console Addon API does not support unattended native item delivery. To automate airdrops, this companion daemon executes `dune admin grant-item-id` against the running game container. The daemon runs as a non-root user and mounts the scripts and `.env` read-only. Be aware that a read-only Docker socket mount still permits sensitive Docker API operations; only run the maintained image on a trusted host.
+Verify the daemon and inspect its logs:
 
-### Update the Daemon
-If you update the addon in RedBlink, you should rebuild the daemon image:
 ```bash
-cd runtime/addons/installed/dune-airdrop-addon/daemon
-docker build -t airdrop-daemon .
-docker rm -f airdrop-daemon 2>/dev/null || true
-# Repeat the docker run command from "Start the Daemon" so the new image is used.
-```
-
-### View Logs
-```bash
+docker ps --filter name=airdrop-daemon
 docker logs -f airdrop-daemon
 ```
 
-### Container Status
-Verify the container is running:
-```bash
-docker ps | grep airdrop-daemon
-```
+To update it, stop the existing container, complete the schema upgrade, then
+run the same command from the newly installed addon directory. Do not run the
+daemon as root to solve a permissions error; set `AIRDROP_DAEMON_UID` and
+`AIRDROP_DAEMON_GID` to an account that can write `runtime/generated`.
 
-### Stop the Daemon
-```bash
-docker stop airdrop-daemon
-```
+## Offline, recovery, and uncertain rewards
 
-### Uninstall the Daemon
-```bash
-docker rm -f airdrop-daemon
-```
+- Confirmed offline players remain queued as `WAITING_FOR_PLAYER` and are
+  retried when they next become eligible.
+- Historical undelivered rewards require one explicit recovery approval in the
+  dashboard. Verify the reward was not previously granted before approving it.
+- `UNCERTAIN` means a command may have crossed the delivery boundary without a
+  conclusive result. It is never automatically retried. Reconcile game state,
+  receipts, queue events, and command output before taking any manual action.
 
-## Uninstallation
+## Uninstall
 
-If you wish to remove the Airdrop Addon completely:
-1. Stop the daemon: `docker rm -f airdrop-daemon`
-2. Remove the database tables and triggers:
-```bash
-sudo docker exec -i dune-postgres psql -U postgres -d dune < addons/installed/dune-airdrop-addon/uninstall_playtime_airdrops.sql
-```
-3. Uninstall the addon via the Dune Console UI.
+Uninstalling deletes addon-owned database data. Create and verify a database
+backup first. Stop and remove the daemon, run `uninstall_playtime_airdrops.sql`
+against the intended Dune database, then remove the addon through Dune Docker
+Console. This operation is not an upgrade path.
 
-## Repository Layout
+## Package contents
 
-```text
-addon.json                       Addon identity, version, entry path, and permissions.
-setup_playtime_airdrops.sql      PostgreSQL schemas and triggers for tracking & rewards.
-uninstall_playtime_airdrops.sql  PostgreSQL cleanup script for uninstalling.
-web/                             The addon page shown inside Dune Docker Console.
-daemon/                          The Node.js Delivery Daemon service.
-```
+The release ZIP contains only runtime files: the manifest, UI, daemon, schema
+scripts, and release documentation. It excludes tests, browser tooling,
+Playwright, Chromium, development `node_modules`, and temporary test hooks.

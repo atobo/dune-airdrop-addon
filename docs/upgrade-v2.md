@@ -12,6 +12,8 @@ or playtime.
    queue rows or reset the addon configuration.
 4. Apply `setup_playtime_airdrops.sql` once through the addon only while the
    battlegroup is stopped, then start a daemon built from the same release.
+5. Keep the backup until queue, receipt, settings, and activity counts have
+   been reviewed after the upgrade.
 
 ## Preflight
 
@@ -38,6 +40,21 @@ IDs and request IDs are retained.
 This conservative mapping prevents a daemon restart from turning an ambiguous
 historic command into a duplicate reward.
 
+## Supported historical evidence and limitations
+
+The v1.4.0 migration was exercised against representative historical schema
+fixtures for the v1.3.6 and v1.3.7 layouts, including pending rewards,
+delivered and pending receipts, custom configuration, loot tables, playtime,
+login streaks, and weekly progress. Initial migration and a rerun preserved
+those records.
+
+v1.3.4 and v1.3.5 layouts were **not** verified. An installation that predates
+v1.3.6, or whose schema has been manually modified, must be treated as an
+unsupported historical shape: take a verified backup, inspect the schema and
+record counts, and do not proceed if the migration reports an unexpected
+structure. Preserve unmappable records for administrator review; do not delete
+or recreate them to force an upgrade.
+
 ## Recovery
 
 Recovery is an administrator decision. Inspect a delivery's request ID,
@@ -50,6 +67,14 @@ If an upgrade is interrupted, rerun the same schema script after restoring
 normal database access. The migration records completion in
 `dune_airdrop.config` and uses additive `IF NOT EXISTS` statements, so it does
 not recreate rewards or reset activity progress.
+
+### Rollback
+
+Rollback means restoring the database backup taken before the upgrade, then
+returning the addon and daemon files to the matching previous release. Do not
+run the uninstall script as a rollback mechanism: it removes the addon-owned
+schema and data. Keep the daemon stopped while restoring or investigating an
+interrupted upgrade.
 
 ## Permissions and deployment
 

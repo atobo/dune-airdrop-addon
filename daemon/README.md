@@ -31,18 +31,23 @@ than root. Before deployment, verify the host ownership with `stat` and use the
 UID/GID that owns that directory. This file is a reviewed deployment example;
 it does not alter an existing container, mount, or host permission.
 
-## Installation & Usage
+## Installation and update
 
-1. **Install Dependencies:**
-   ```bash
-   cd daemon
-   npm install
-   ```
+Use the reviewed Docker example rather than installing dependencies directly
+on the host. From the installed addon directory:
 
-2. **Run the Daemon:**
-   You can run the daemon manually in a terminal, or set it up to run automatically in the background using `pm2`, `tmux`, or a `systemd` service.
-   ```bash
-   node index.js
-   ```
+```bash
+export DUNE_DOCKER_ROOT=/absolute/path/to/dune-awakening-selfhost-docker
+export AIRDROP_DAEMON_UID="$(id -u)"
+export AIRDROP_DAEMON_GID="$(id -g)"
+cd "$DUNE_DOCKER_ROOT/runtime/addons/installed/dune-airdrop-addon/daemon"
+docker compose -f docker-compose.dev.yml up -d --build
+```
 
-The daemon automatically reads your secure database credentials from the parent `dune-awakening-selfhost-docker/.env` file.
+The daemon reads database configuration from the mounted server `.env`. Before
+an upgrade, stop the old daemon, complete the addon schema upgrade, then build
+and start the daemon from the matching release. Do not run two daemon versions
+against the same queue.
+
+The compose file is an example deployment definition. Review every mount and
+the Docker-socket risk for the host before using it.
