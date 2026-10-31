@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync, execSync } = require("child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const manifestPath = path.join(repoRoot, "addon.json");
@@ -161,10 +162,15 @@ function main() {
   validatePermissions(manifest);
   validateRuntimeFiles();
 
+  try {
+    execFileSync(process.execPath, [path.join(repoRoot, "scripts/build_web_bundle.js"), "--check"], { stdio: "inherit" });
+  } catch (error) {
+    fail("The self-contained web runtime bundle is stale.");
+  }
+
   console.log(`Addon manifest is valid: ${manifest.id} ${manifest.version}`);
 
   console.log("Running automated tests...");
-  const { execSync } = require("child_process");
   try {
     execSync("npm test", { stdio: "inherit", cwd: repoRoot });
     console.log("Tests passed.");

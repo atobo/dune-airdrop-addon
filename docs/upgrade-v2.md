@@ -1,6 +1,6 @@
 # Safe upgrade and recovery
 
-Version 1.4.1 of the delivery lifecycle is an in-place, additive upgrade. It does
+Version 1.4.2 of the delivery lifecycle is an in-place, additive upgrade. It does
 not delete queues, receipts, settings, loot tables, activity records, streaks,
 or playtime.
 
@@ -63,6 +63,14 @@ above. It also corrects the default loot-pool classification for a small set of
 reviewed resource and component entries. The setup script updates only those
 named default entries and does not clear custom loot tables, queue rows,
 receipts, activity, streaks, or settings.
+
+## v1.4.2 notes
+
+v1.4.2 packages the Console entry as a self-contained document. Its styles,
+bridge code, UI code, and schema SQL travel inside `web/index.html`, avoiding
+blocked authenticated asset loads and the installed addon's `connect-src
+'none'` policy. **INIT SCHEMA** still sends the same SQL through the approved
+database bridge; it does not gain direct database or network access.
 
 ## Recovery
 

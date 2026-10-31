@@ -14,6 +14,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+node scripts/build_web_bundle.js
 node scripts/validate.js
 
 ADDON_ID="$(node -e "process.stdout.write(require('./addon.json').id)")"
@@ -25,8 +26,7 @@ mkdir -p dist
 
 python3 scripts/create_zip.py "dist/${PACKAGE_NAME}" \
   addon.json assets/dune_airdrop_art.png \
-  web/addon.css web/addon.js web/dune-addon-bridge.js \
-  web/grant_logic.js web/index.html web/style.css \
+  web/index.html \
   daemon/.dockerignore daemon/Dockerfile daemon/README.md \
   daemon/index.js daemon/databaseConfig.js daemon/deliveryResult.js daemon/deliveryState.js daemon/identityAdapter.js daemon/docker-compose.dev.yml \
   daemon/package.json daemon/package-lock.json \

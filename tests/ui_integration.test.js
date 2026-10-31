@@ -16,7 +16,7 @@ async function waitFor(predicate, message, timeoutMs = 1500) {
 
 test('UI Integration - Full Container Selection and Grant Workflow', async () => {
   // Load HTML and Scripts
-  const htmlPath = path.resolve(__dirname, '../web/index.html');
+  const htmlPath = path.resolve(__dirname, '../web/index.template.html');
   const html = fs.readFileSync(htmlPath, 'utf-8');
   
   const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
@@ -135,7 +135,7 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
 });
 
 test('UI Integration - Clean install prompts for schema initialization', async () => {
-  const html = fs.readFileSync(path.resolve(__dirname, '../web/index.html'), 'utf-8');
+  const html = fs.readFileSync(path.resolve(__dirname, '../web/index.template.html'), 'utf-8');
   const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
   const addonSrc = fs.readFileSync(path.resolve(__dirname, '../web/addon.js'), 'utf-8');
   const addonSrcModified = addonSrc.replace('const isSandboxMode = window.parent === window;', 'const isSandboxMode = false;');
@@ -168,7 +168,7 @@ test('UI Integration - Clean install prompts for schema initialization', async (
 });
 
 test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
-  const htmlPath = path.resolve(__dirname, '../web/index.html');
+  const htmlPath = path.resolve(__dirname, '../web/index.template.html');
   const html = fs.readFileSync(htmlPath, 'utf-8');
   const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
   const addonSrc = fs.readFileSync(path.resolve(__dirname, '../web/addon.js'), 'utf-8');

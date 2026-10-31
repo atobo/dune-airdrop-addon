@@ -22,11 +22,17 @@ jobs:
       - name: Install test dependencies
         run: npm ci
 
+      - name: Install Chromium for the Console sandbox regression
+        run: npx playwright install --with-deps chromium
+
       - name: Install packaging tools
         run: sudo apt-get update && sudo apt-get install -y zip
 
       - name: Validate addon
         run: node scripts/validate.js
+
+      - name: Run Console sandbox browser regression
+        run: npm run test:console-sandbox-browser
 
       - name: Check tag matches addon version
         run: |

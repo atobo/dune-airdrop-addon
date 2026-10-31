@@ -32,7 +32,11 @@
             action,
             payload
           },
-          window.location.origin
+          // A sandboxed Console iframe has an opaque origin, so a concrete
+          // target origin prevents this child-to-parent message from leaving
+          // the frame. The parent window is the direct recipient and response
+          // handling below still verifies both its source and origin.
+          "*"
         );
       } catch (error) {
         pendingRequests.delete(requestId);

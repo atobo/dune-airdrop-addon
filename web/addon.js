@@ -564,19 +564,26 @@ async function handleInitializeSchema() {
   if (!confirmed) return;
 
   try {
-    showToast('Loading SQL schema from addon package...', 'success');
-    const response = await fetch('../setup_playtime_airdrops.sql');
-    if (!response.ok) throw new Error('Failed to fetch SQL file.');
-
-    const sqlQuery = await response.text();
+    const sqlQuery = window.__AIRDROP_SCHEMA_SQL;
+    if (typeof sqlQuery !== 'string' || sqlQuery.trim() === '') {
+      throw new Error('The packaged schema bundle is missing. Reinstall the complete addon package.');
+    }
 
     showToast('Executing schema creation... This may take a moment.', 'success');
     await window.DuneAddon.request("database.execute", {
       query: sqlQuery
     });
 
-    showToast('Database schema and triggers initialized successfully. Reloading...', 'success');
-    window.setTimeout(() => window.location.reload(), 500);
+    showToast('Database schema and triggers initialized successfully. Refreshing data...', 'success');
+    await loadSettings();
+    await fetchDiagnostics();
+    await fetchPendingAirdrops();
+    await fetchDeliverySummary();
+    await fetchContainers();
+    if (!window.__fetchDiagnosticsInterval) window.__fetchDiagnosticsInterval = setInterval(fetchDiagnostics, 5000);
+    if (!window.__fetchPendingInterval) window.__fetchPendingInterval = setInterval(fetchPendingAirdrops, 5000);
+    if (!window.__fetchDeliveryInterval) window.__fetchDeliveryInterval = setInterval(fetchDeliverySummary, 5000);
+    connectionStatusBadge.textContent = 'Console Connected';
   } catch (err) {
     const message = String(err?.message || err);
     if (/lock timeout|statement timeout|canceling statement/i.test(message)) {

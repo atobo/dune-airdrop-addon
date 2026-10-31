@@ -11,6 +11,15 @@ test('manifest and package versions stay aligned', () => {
   assert.equal(manifest.version, packageJson.version);
 });
 
+test('installed entry is self-contained and embeds the schema bundle', () => {
+  const html = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8');
+  assert.match(html, /name="dune-airdrop-runtime" content="self-contained"/);
+  assert.match(html, /window\.__AIRDROP_SCHEMA_SQL\s*=/);
+  assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/i);
+  assert.doesNotMatch(html, /<link\b[^>]*\bhref=/i);
+  assert.doesNotMatch(html, /\bfetch\s*\(/);
+});
+
 test('daemon declares its runtime PostgreSQL dependency', () => {
   const daemonPackage = JSON.parse(fs.readFileSync(path.join(root, 'daemon/package.json'), 'utf8'));
   assert.match(daemonPackage.dependencies.pg, /^\^8\./);
