@@ -52,7 +52,7 @@ async function deferOfflineDeliveries(client) {
   const result = await client.query(`
     UPDATE dune_airdrop.pending_deliveries pending
     SET delivery_state = $1, next_attempt_at = NOW() + INTERVAL '5 minutes', last_error_code = 'PLAYER_OFFLINE', last_error_at = NOW(), updated_at = NOW()
-    WHERE pending.is_applied = false AND pending.requires_recovery_approval = false
+    WHERE pending.is_applied = false AND pending.requires_recovery_approval = false AND pending.resolution_status IS NULL
       AND pending.delivery_state IN ($2, $3, $4) AND coalesce(pending.next_attempt_at, NOW()) <= NOW()
       AND NOT EXISTS (SELECT 1 FROM dune.player_state ps WHERE ps.account_id = pending.account_id AND lower(ps.online_status::text) = 'online')
     RETURNING pending.id`, [DeliveryState.WAITING_FOR_PLAYER, DeliveryState.READY, DeliveryState.RETRY_WAIT, DeliveryState.WAITING_FOR_PLAYER]);
@@ -63,7 +63,7 @@ async function claimDelivery(client) {
   const result = await client.query(`
     WITH candidate AS (
       SELECT id FROM dune_airdrop.pending_deliveries
-      WHERE is_applied = false AND requires_recovery_approval = false
+      WHERE is_applied = false AND requires_recovery_approval = false AND resolution_status IS NULL
         AND delivery_state IN ($1, $2, $3) AND coalesce(next_attempt_at, NOW()) <= NOW()
       ORDER BY created_at ASC, id ASC FOR UPDATE SKIP LOCKED LIMIT 1
     ) UPDATE dune_airdrop.pending_deliveries pending

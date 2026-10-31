@@ -656,7 +656,7 @@ async function fetchPendingAirdrops() {
                      bpd.last_error_code, bpd.next_attempt_at
               FROM dune_airdrop.pending_deliveries bpd
               LEFT JOIN dune.player_state ps ON bpd.account_id = ps.account_id
-              WHERE bpd.is_applied = false
+              WHERE bpd.is_applied = false AND COALESCE(to_jsonb(bpd)->>'resolution_status', '') = ''
               ORDER BY bpd.created_at DESC
               LIMIT 500`
     });
@@ -702,7 +702,7 @@ function renderPendingAirdrops() {
     <tr class="border-b border-slate-900/40 hover:bg-slate-900/20 font-mono text-xs">
       <td class="py-1.5 text-slate-300">${escapeHTML(d.character_name)}</td>
       <td class="py-1.5 text-amber-500 font-bold">${escapeHTML(d.template_id)}</td>
-      <td class="py-1.5 text-right text-slate-300 font-bold">${d.stack_size} <span class="text-slate-500">${escapeHTML(d.delivery_state)}</span>${d.requires_recovery_approval && d.delivery_state === 'WAITING_FOR_PLAYER' ? ` <button onclick="window.approveHistoricalDelivery('${escapeHTML(d.id)}')" class="ml-1 text-amber-400 underline">review</button>` : ''}</td>
+      <td class="py-1.5 text-right text-slate-300 font-bold">${d.stack_size} <span class="text-slate-500">${escapeHTML(d.delivery_state)}</span><button onclick="window.openDeliveryHistory('${escapeHTML(d.id)}')" class="ml-1 text-sky-400 underline">history</button>${d.requires_recovery_approval && d.delivery_state === 'WAITING_FOR_PLAYER' ? ` <button onclick="window.approveHistoricalDelivery('${escapeHTML(d.id)}')" class="ml-1 text-amber-400 underline">review</button>` : ''}${d.delivery_state === 'UNCERTAIN' ? ` <button onclick="window.openDeliveryResolution('${escapeHTML(d.id)}')" class="ml-1 text-rose-300 underline">resolve</button>` : ''}</td>
     </tr>
   `).join('');
 }
@@ -731,6 +731,43 @@ window.approveHistoricalDelivery = async function(id) {
     if (Number(result?.rowCount || 0) !== 1) throw new Error('Reward is no longer eligible for recovery approval. Refresh and review its current state.');
     showToast('Historical reward approved for normal offline-aware delivery.', 'success'); fetchPendingAirdrops(); fetchDeliverySummary();
   } catch (error) { showToast(`Recovery approval failed: ${error.message || error}`, 'error'); }
+};
+
+let selectedDeliveryId = null;
+const deliveryHistoryBody = document.getElementById('deliveryHistoryBody');
+const deliveryResolutionModal = document.getElementById('deliveryResolutionModal');
+const deliveryResolutionTitle = document.getElementById('deliveryResolutionTitle');
+
+window.openDeliveryHistory = async function(id) {
+  if (!/^\d+$/.test(String(id))) return;
+  try {
+    const raw = await window.DuneAddon.request('database.query', { query: `SELECT e.created_at, e.state, e.detail FROM dune_airdrop.delivery_events e WHERE e.delivery_id = ${id}::int ORDER BY e.created_at DESC LIMIT 100` });
+    const rows = raw.rows || raw || [];
+    deliveryHistoryBody.innerHTML = rows.length ? rows.map(row => `<tr><td class="py-1 pr-2 text-slate-500">${escapeHTML(row.created_at)}</td><td class="py-1 pr-2 text-amber-400">${escapeHTML(row.state)}</td><td class="py-1 text-slate-300 break-all">${escapeHTML(row.detail)}</td></tr>`).join('') : '<tr><td class="py-3 text-slate-500" colspan="3">No addon event history exists for this delivery.</td></tr>';
+    document.getElementById('deliveryHistoryModal').classList.remove('hidden');
+  } catch (error) { showToast(`Failed to load delivery history: ${error.message || error}`, 'error'); }
+};
+
+window.closeDeliveryHistory = () => document.getElementById('deliveryHistoryModal').classList.add('hidden');
+window.openDeliveryResolution = function(id) {
+  if (!/^\d+$/.test(String(id))) return;
+  selectedDeliveryId = String(id);
+  deliveryResolutionTitle.textContent = `Resolve uncertain delivery #${selectedDeliveryId}`;
+  deliveryResolutionModal.classList.remove('hidden');
+};
+window.closeDeliveryResolution = () => { selectedDeliveryId = null; deliveryResolutionModal.classList.add('hidden'); };
+window.resolveUncertainDelivery = async function(action) {
+  const id = selectedDeliveryId;
+  if (!id || !['delivered', 'retry', 'archive'].includes(action)) return;
+  const descriptions = { delivered: 'confirm this reward was delivered', retry: 'confirm this reward was not delivered and authorize one retry', archive: 'archive this reward from the active queue' };
+  if (!window.confirm(`This will ${descriptions[action]}. It cannot be undone from the active queue. Continue?`)) return;
+  const statements = {
+    delivered: `WITH changed AS (UPDATE dune_airdrop.pending_deliveries SET delivery_state='DELIVERED', is_applied=true, resolution_status='CONFIRMED_DELIVERED', resolution_note='Administrator confirmed delivered.', resolved_at=NOW(), locked_at=NULL, next_attempt_at=NULL, updated_at=NOW() WHERE id=${id}::int AND delivery_state='UNCERTAIN' AND resolution_status IS NULL RETURNING id, request_id), receipt AS (UPDATE dune_airdrop.delivery_receipts r SET status='SUCCESS', status_updated_at=NOW(), failure_reason='Administrator confirmed delivery after investigation.' FROM changed WHERE r.request_id=changed.request_id) INSERT INTO dune_airdrop.delivery_events (delivery_id,state,detail) SELECT id,'DELIVERED','Administrator confirmed delivered after investigation.' FROM changed;`,
+    retry: `WITH changed AS (UPDATE dune_airdrop.pending_deliveries SET delivery_state='WAITING_FOR_PLAYER', requires_recovery_approval=false, recovery_approved_at=NOW(), resolution_status=NULL, resolution_note=NULL, resolved_at=NULL, locked_at=NULL, next_attempt_at=NOW(), last_error_code=NULL, last_error_at=NULL, updated_at=NOW() WHERE id=${id}::int AND delivery_state='UNCERTAIN' AND resolution_status IS NULL RETURNING id, request_id), receipt AS (UPDATE dune_airdrop.delivery_receipts r SET status='WAITING_FOR_PLAYER', status_updated_at=NOW(), failure_reason='Administrator confirmed prior delivery did not occur; retry authorized.' FROM changed WHERE r.request_id=changed.request_id) INSERT INTO dune_airdrop.delivery_events (delivery_id,state,detail) SELECT id,'WAITING_FOR_PLAYER','Administrator confirmed undelivered; controlled retry authorized.' FROM changed;`,
+    archive: `WITH changed AS (UPDATE dune_airdrop.pending_deliveries SET resolution_status='ARCHIVED', resolution_note='Administrator archived after review.', resolved_at=NOW(), locked_at=NULL, next_attempt_at=NULL, updated_at=NOW() WHERE id=${id}::int AND delivery_state='UNCERTAIN' AND resolution_status IS NULL RETURNING id) INSERT INTO dune_airdrop.delivery_events (delivery_id,state,detail) SELECT id,'ARCHIVED','Administrator archived delivery from the active queue after review.' FROM changed;`
+  };
+  try { const result = await window.DuneAddon.request('database.execute', { query: statements[action] }); if (Number(result?.rowCount || 0) !== 1) throw new Error('Delivery is no longer eligible for this resolution. Refresh and review it again.'); showToast('Delivery resolution recorded. History was preserved.', 'success'); window.closeDeliveryResolution(); fetchPendingAirdrops(); fetchDeliverySummary(); }
+  catch (error) { showToast(`Resolution failed: ${error.message || error}`, 'error'); }
 };
 
 async function fetchContainers() {

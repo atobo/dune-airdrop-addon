@@ -709,6 +709,15 @@ docker run -d \
 
   <!-- Toast notification container -->
   <div id="toastContainer" class="fixed bottom-5 right-5 flex flex-col gap-2 z-50 pointer-events-none"></div>
+  <div id="deliveryHistoryModal" class="hidden fixed inset-0 z-50 bg-black/70 p-4 flex items-center justify-center">
+    <div class="w-full max-w-4xl max-h-[80vh] overflow-auto rounded-xl border border-slate-700 bg-slate-950 p-5 font-mono text-xs">
+      <div class="flex justify-between mb-3"><h2 class="text-amber-500 font-bold">DELIVERY HISTORY</h2><button onclick="window.closeDeliveryHistory()" class="text-slate-300">CLOSE</button></div>
+      <table class="w-full text-left"><thead class="text-slate-500"><tr><th>Time</th><th>State</th><th>Detail</th></tr></thead><tbody id="deliveryHistoryBody"></tbody></table>
+    </div>
+  </div>
+  <div id="deliveryResolutionModal" class="hidden fixed inset-0 z-50 bg-black/70 p-4 flex items-center justify-center">
+    <div class="w-full max-w-xl rounded-xl border border-amber-500/40 bg-slate-950 p-5 font-mono text-xs"><h2 id="deliveryResolutionTitle" class="text-amber-500 font-bold mb-3"></h2><p class="text-slate-300 mb-4">Choose only after checking inventory and history. These actions preserve the database record and append an audit event.</p><div class="flex flex-wrap gap-2"><button onclick="window.resolveUncertainDelivery('delivered')" class="bg-emerald-800 px-3 py-2 rounded">CONFIRM DELIVERED</button><button onclick="window.resolveUncertainDelivery('retry')" class="bg-amber-700 px-3 py-2 rounded">CONFIRM NOT DELIVERED / RETRY</button><button onclick="window.resolveUncertainDelivery('archive')" class="bg-slate-700 px-3 py-2 rounded">ARCHIVE</button><button onclick="window.closeDeliveryResolution()" class="bg-slate-800 px-3 py-2 rounded">CANCEL</button></div></div>
+  </div>
 
   <!-- Script tags -->
   <script src="./dune-addon-bridge.js"></script>

@@ -2428,6 +2428,13 @@ ALTER TABLE dune_airdrop.pending_deliveries
   ADD COLUMN IF NOT EXISTS requires_recovery_approval BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS recovery_approved_at TIMESTAMP WITH TIME ZONE;
 
+-- Delivery resolution is audit-preserving: archived rows remain available in
+-- history but are excluded from daemon dispatch and the active queue.
+ALTER TABLE dune_airdrop.pending_deliveries
+  ADD COLUMN IF NOT EXISTS resolution_status TEXT,
+  ADD COLUMN IF NOT EXISTS resolution_note TEXT,
+  ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP WITH TIME ZONE;
+
 ALTER TABLE dune_airdrop.delivery_receipts
   ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMP WITH TIME ZONE,
   ADD COLUMN IF NOT EXISTS failure_reason TEXT;
@@ -2443,7 +2450,7 @@ CREATE INDEX IF NOT EXISTS delivery_events_delivery_id_idx
   ON dune_airdrop.delivery_events (delivery_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS pending_deliveries_dispatch_idx
   ON dune_airdrop.pending_deliveries (requires_recovery_approval, delivery_state, next_attempt_at, created_at, id)
-  WHERE is_applied = FALSE;
+  WHERE is_applied = FALSE AND resolution_status IS NULL;
 
 DO $$
 BEGIN

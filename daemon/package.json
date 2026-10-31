@@ -1,6 +1,6 @@
 {
   "name": "dune-airdrop-delivery-daemon",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "type": "module",
   "scripts": {
