@@ -31,3 +31,14 @@ RedBlink is extremely strict about preventing duplicate actions (like double-gra
 - Ensure exact parity between the `addon.json` (inside the add-on) and the catalog manifest (`dune-docker-addons.json`).
 - Do not invent or include unsupported fields (like `minimumVersion`) in the `addon.json` schema unless explicitly requested by the core team.
 - Always recalculate and update the `sha256` hash in the catalog when the `.zip` archive changes.
+
+## 7. Console Runtime Packaging (CRITICAL)
+- **Treat the installed addon as an opaque-origin iframe**: the Console runs an addon entry in `sandbox="allow-scripts"`. Do not assume a normal static-server preview represents the installed environment.
+- **Use a self-contained entry document**: standalone `<script src>` and `<link rel="stylesheet">` requests can fail because Console content routes are authenticated and the session cookie is `SameSite=Strict`. For packaged UI code and styles, prefer an entry document with the required CSS and JavaScript bundled inline unless the Console team has supplied and verified an authenticated asset-loading mechanism.
+- **Do not fetch packaged helper files at runtime**: the installed addon CSP uses `connect-src 'none'`. In particular, schema SQL must be embedded in the packaged runtime bundle and sent through the existing permissioned database bridge; it must not be fetched from `setup_playtime_airdrops.sql` or another local URL.
+- **Keep privileged work on the bridge**: bundling SQL or UI assets does not grant direct network or database access. Database writes must still use the Console's approved bridge and requested database permissions.
+
+## 8. Installed-Environment Browser Regression (CRITICAL)
+- Add a browser regression that reproduces the real Console rules: opaque-origin `sandbox="allow-scripts"`, authenticated content routes with a `SameSite=Strict` session cookie, and the installed CSP.
+- The test must prove that the packaged entry renders styled, that bridge code is available, and that **INIT SCHEMA** reaches the database bridge with mocked database writes. A permissive static-server or file preview is insufficient evidence.
+- When a packaging fix changes the archive, build a new immutable release asset, independently verify its SHA-256, and update the catalog PR's pinned URL and checksum. Never replace a package behind an existing version tag.
