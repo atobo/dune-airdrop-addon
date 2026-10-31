@@ -23,6 +23,14 @@ test("resolution data is additive and archived records are excluded from dispatc
   assert.doesNotMatch(sql, /DELETE\s+FROM\s+dune_airdrop\.delivery_events/i);
 });
 
+test("administrator-reviewed loot corrections are explicit and non-destructive", () => {
+  assert.match(sql, /BEGIN ADMIN-REVIEWED LOOT-POOL CORRECTIONS/);
+  assert.match(sql, /\('T6IrradiatedCore', 'raw_resources', 'crafted_components'\)/);
+  assert.match(sql, /\('DolomiteRock', 'crafted_components', 'raw_resources'\)/);
+  assert.ok(sql.indexOf('BEGIN ADMIN-REVIEWED LOOT-POOL CORRECTIONS') < sql.indexOf('BEGIN AUTO-GENERATED LOOT POOLS'));
+  assert.doesNotMatch(sql, /DELETE\s+FROM\s+dune_airdrop\.loot_tables/i);
+});
+
 test("historical pending and uncertain receipts are held rather than replayed", () => {
   assert.match(sql, /WHEN receipt\.status IN \('PENDING', 'UNCERTAIN'\) THEN 'UNCERTAIN'/);
   assert.match(sql, /requires_recovery_approval = NOT pending\.is_applied/);

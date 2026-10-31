@@ -186,7 +186,25 @@ sqlOutput += `INSERT INTO dune_airdrop.loot_tables (tier, category, template_id,
 
 const valuesList = [];
 
+// Administrator-reviewed balance overrides. Keep these explicit: heuristic
+// keyword matching cannot distinguish bulk materials from valuable components.
+const RESOURCE_POOL_OVERRIDES = new Map([
+  ['DolomiteRock', 'raw_resources'],
+  ['JasmiumCrystal', 'raw_resources'],
+  ['T6RefinedResourceB', 'raw_resources'],
+  ['T6ResourceA', 'raw_resources'],
+  ['SaguaroResourceRaw', 'crafted_components'],
+  ['T4HarkSpiceSiloComponent2', 'crafted_components'],
+  ['T6Watertube', 'crafted_components'],
+  ['T4HarkSpiceSiloComponent1', 'crafted_components'],
+  ['T6IrradiatedCore', 'crafted_components'],
+  ['T5RadiatedCoreComponent', 'crafted_components'],
+  ['T4HarkSpiceSiloComponent3', 'crafted_components'],
+  ['SpicedFuelCell', 'crafted_components']
+]);
+
 function getResourceSubcategory(id) {
+  if (RESOURCE_POOL_OVERRIDES.has(id)) return RESOURCE_POOL_OVERRIDES.get(id);
   const rawKeywords = ['ore', 'stone', 'sand', 'fiber', 'wood', 'water', 'raw', 'residue', 'spice', 'plant'];
   if (rawKeywords.some(kw => id.toLowerCase().includes(kw))) return 'raw_resources';
   return 'crafted_components';
@@ -230,4 +248,3 @@ const regex = new RegExp(`${startMarker}[\\s\\S]*?${endMarker}`);
 const newSqlContent = sqlContent.replace(regex, `-- [BEGIN AUTO-GENERATED LOOT POOLS]\n${sqlOutput}\n-- [END AUTO-GENERATED LOOT POOLS]`);
 fs.writeFileSync(sqlPath, newSqlContent);
 console.log('setup_playtime_airdrops.sql updated successfully.');
-
