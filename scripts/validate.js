@@ -7,13 +7,17 @@ const repoRoot = path.resolve(__dirname, "..");
 const manifestPath = path.join(repoRoot, "addon.json");
 const allowedPermissions = new Set([
   "players:read",
+  "ops:read",
   "database:read",
   "database:write",
   "server:status",
   "server:restart",
   "files:addon-data",
   "broadcast:send",
-  "admin:grant-items"
+  "admin:grant-items",
+  "rewards:grant",
+  "players:message",
+  "scheduler:server"
 ]);
 
 function fail(message) {
@@ -40,7 +44,7 @@ function requireString(manifest, field) {
 }
 
 function validateEntry(manifest) {
-  if (!manifest.entry || typeof manifest.entry !== "object") {
+  if (!manifest.entry || typeof manifest.entry !== "object" || Array.isArray(manifest.entry)) {
     fail("entry must be an object.");
   }
 
@@ -52,8 +56,8 @@ function validateEntry(manifest) {
     fail("entry.path must be a non-empty string.");
   }
 
-  const entryPath = manifest.entry.path;
-  if (entryPath.startsWith("/") || entryPath.includes("..")) {
+  const entryPath = manifest.entry.path.trim().replaceAll("\\", "/");
+  if (entryPath.startsWith("/") || entryPath.includes("\0") || entryPath.split("/").some((part) => part === "." || part === "..")) {
     fail("entry.path must be a relative path inside the addon package.");
   }
 
@@ -62,8 +66,17 @@ function validateEntry(manifest) {
     fail("entry.path must stay inside the addon package.");
   }
 
-  if (!fs.existsSync(resolvedEntryPath)) {
+  if (!fs.existsSync(resolvedEntryPath) || !fs.statSync(resolvedEntryPath).isFile()) {
     fail(`entry.path does not exist: ${entryPath}`);
+  }
+  if (!fs.realpathSync(resolvedEntryPath).startsWith(fs.realpathSync(repoRoot) + path.sep)) {
+    fail("entry.path must not link outside the addon package.");
+  }
+  if (/\.html?$/i.test(entryPath)) {
+    const html = fs.readFileSync(resolvedEntryPath, "utf8");
+    if (!new RegExp(`data-addon-id\\s*=\\s*["']${manifest.id}["']`).test(html)) {
+      fail("The entry HTML data-addon-id must match addon.json.id.");
+    }
   }
 }
 
@@ -133,8 +146,11 @@ function main() {
   requireString(manifest, "author");
   requireString(manifest, "version");
 
-  if (!/^[a-z0-9][a-z0-9-]{2,63}$/.test(manifest.id)) {
-    fail("id must be lowercase, URL-safe, and 3-64 characters.");
+  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(manifest.id)) {
+    fail("id must be lowercase, URL-safe, and 2-64 characters.");
+  }
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(manifest.version)) {
+    fail("version must use semantic versioning, for example 0.1.0 or 0.2.0-rc.1.");
   }
 
   if (manifest.type !== "ui") {

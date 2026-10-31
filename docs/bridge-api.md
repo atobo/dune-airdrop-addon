@@ -5,18 +5,29 @@ Addons run inside an iframe. They call back into Dune Docker Console through the
 Use it like this:
 
 ```js
-const result = await window.DuneAddon.request("leadership.players.list");
+const result = await window.DuneAddon.request("players.summary.list");
 ```
 
 ## Available Actions
 
 | Action | Required permission | Purpose |
 | --- | --- | --- |
-| `leadership.players.list` | `players:read` | Read player summary data exposed by the console. |
+| `players.summary.list` | `players:read` | Read player-summary data exposed by the console. |
+| `players.identity.list`, `players.progression.get` | `players:read` | Read player identities and supported progression data. |
+| `admin.items.grant` | `admin:grant-items` | Deliver an item through the Console's validated item-grant action. |
+| `rewards.deliver`, `.status`, `.list` | `rewards:grant` | Queue and inspect supported Console reward delivery. |
+| `players.message.send`, `.status`, `.list` | `players:message` | Queue and inspect private player messages. |
 | `database.query` | `database:read` | Run read-only SQL. |
 | `database.execute` | `database:write` | Run write SQL. The console creates a database backup first. |
 
 Keep bridge calls small and explicit. Ask only for the permissions your addon actually uses.
+Reuse a deterministic delivery `requestId` when retrying a reward or item grant;
+do not create a fresh ID for a retry. The SQL bridge accepts query text only,
+so never interpolate untrusted values into a query.
+
+Addon pages are sandboxed: they cannot use direct Console REST calls, browser
+storage, or arbitrary network requests. Bundle the runtime assets you need and
+use the bridge for supported Console actions.
 
 ## Local Development
 
@@ -41,8 +52,8 @@ async function getPlayers() {
     ];
   }
 
-  const result = await window.DuneAddon.request("leadership.players.list");
-  return result.players || result || [];
+  const result = await window.DuneAddon.request("players.summary.list");
+  return result.rows || result.players || (Array.isArray(result) ? result : []);
 }
 ```
 
