@@ -1,3 +1,4 @@
 #!/bin/sh
 set -eu
 printf '%s\n' "$*" >> "${AIRDROP_TEST_COUNTER:-/repo/runtime/generated/commands.log}"
+if [ -n "${AIRDROP_TEST_PAUSE_AFTER_GRANT:-}" ]; then sleep "$AIRDROP_TEST_PAUSE_AFTER_GRANT"; fi
