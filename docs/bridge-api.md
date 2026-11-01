@@ -19,6 +19,8 @@ const result = await window.DuneAddon.request("players.summary.list");
 | `players.message.send`, `.status`, `.list` | `players:message` | Queue and inspect private player messages. |
 | `database.query` | `database:read` | Run read-only SQL. |
 | `database.execute` | `database:write` | Run write SQL. The console creates a database backup first. |
+| `addon.storage.get`, `.list` | `files:addon-data` | Read persistent JSON scoped to this addon. |
+| `addon.storage.put`, `.delete` | `files:addon-data` | Save or remove addon data; use `expectedVersion` to prevent competing writes. |
 
 Keep bridge calls small and explicit. Ask only for the permissions your addon actually uses.
 Reuse a deterministic delivery `requestId` when retrying a reward or item grant;
@@ -28,6 +30,11 @@ so never interpolate untrusted values into a query.
 Addon pages are sandboxed: they cannot use direct Console REST calls, browser
 storage, or arbitrary network requests. Bundle the runtime assets you need and
 use the bridge for supported Console actions.
+
+Manual grants persist their intent through addon storage before delivery. A
+versioned null clears completed state without resetting the version counter.
+An uncertain request retains its ID until reviewed; do not substitute an
+in-memory fallback when durable storage fails.
 
 ## Local Development
 

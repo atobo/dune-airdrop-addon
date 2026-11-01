@@ -5,9 +5,9 @@ Based on the feedback received during the Airdrop Add-on development, here is a 
 ## 1. Idempotency & Retry Safety (CRITICAL)
 RedBlink is extremely strict about preventing duplicate actions (like double-granting items) due to network interruptions, page reloads, or impatient users.
 - **Opaque Request IDs**: Use `crypto.randomUUID()` for unique identifiers instead of concatenating raw user inputs (which can exceed length limits or contain unsupported characters).
-- **Persistent State**: Always persist pending request IDs and their exact payload to `localStorage` *before* firing a bridge request. 
+- **Persistent State**: Persist pending request IDs and their exact payload through `addon.storage.get` / `addon.storage.put` *before* firing a grant. The installed opaque-origin iframe cannot use `localStorage`. Require `files:addon-data`, use `expectedVersion` checks, and refuse the grant when storage is unavailable.
 - **Strict Clearing Rules**: Do *not* clear a pending request from storage just because a UI modal was closed or the page refreshed. Only clear it upon confirmed, definitive success (e.g., `receipt.ok === true`) or a permanent rejection (e.g., insufficient permissions).
-- **Regeneration**: Regenerate a request ID *only* when the underlying payload (item, quantity, target player) intentionally changes.
+- **Regeneration**: Never replace a pending or uncertain request just because its payload changed. Resolve the existing request first through a definitive receipt or reviewed discard. Keep its ID when retrying, including after reopening the addon or switching tabs.
 
 ## 2. Unresolved State & UI Locking
 - If a response is lost or ambiguous (an "Uncertain State"), the UI must **lock all related input fields** so the administrator cannot accidentally change the payload and fire a new request.
@@ -25,7 +25,7 @@ RedBlink is extremely strict about preventing duplicate actions (like double-gra
 ## 5. Automated Testing Requirements
 - RedBlink expects mission-critical native bridge interactions and idempotency logic to have automated test coverage.
 - Extract core logic out of DOM event listeners and into pure, exportable functions.
-- Write tests using the native `node:test` runner to simulate edge cases like corrupt `localStorage`, payload changes, and ambiguous bridge responses.
+- Write tests using the native `node:test` runner for corrupt stored state, concurrent version conflicts, payload changes, and ambiguous bridge responses. Test the real opaque-origin browser sandbox without replacing blocked native dialogs or browser storage with successful mocks.
 
 ## 6. Manifests & Packaging
 - Ensure exact parity between the `addon.json` (inside the add-on) and the catalog manifest (`dune-docker-addons.json`).
