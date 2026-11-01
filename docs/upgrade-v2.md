@@ -1,6 +1,6 @@
 # Safe upgrade and recovery
 
-Version 1.4.2 of the delivery lifecycle is an in-place, additive upgrade. It does
+Version 1.4.3 of the delivery lifecycle is an in-place, additive upgrade. It does
 not delete queues, receipts, settings, loot tables, activity records, streaks,
 or playtime.
 
@@ -63,6 +63,15 @@ above. It also corrects the default loot-pool classification for a small set of
 reviewed resource and component entries. The setup script updates only those
 named default entries and does not clear custom loot tables, queue rows,
 receipts, activity, streaks, or settings.
+
+## v1.4.3 notes
+
+The Console sandbox now uses in-page confirmations for schema setup and
+delivery review. Manual grants require `files:addon-data`: pending and uncertain
+request IDs are saved through the Console bridge, survive reopening the addon,
+and use version checks to prevent competing tabs from replacing each other's
+requests. If storage cannot be read or saved, no new grant is sent. Check the
+delivery before discarding an uncertain request; discarding permits a new ID.
 
 ## v1.4.2 notes
 

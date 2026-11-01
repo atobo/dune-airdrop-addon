@@ -8,91 +8,121 @@ const root = resolve(import.meta.dirname, '..');
 const entry = readFileSync(resolve(root, 'web/index.html'), 'utf8');
 const schema = readFileSync(resolve(root, 'setup_playtime_airdrops.sql'), 'utf8');
 const assetRequests = [];
-
-const hostHtml = `<!doctype html>
-<meta charset="utf-8">
+const hostHtml = `<!doctype html><meta charset="utf-8">
 <style>html,body,iframe{width:100%;height:100%;margin:0;border:0}</style>
 <iframe id="addon" sandbox="allow-scripts" src="/api/addons/installed/dune-airdrop-addon/content/web/index.html"></iframe>
 <script>
-  window.__bridgeLog = [];
-  addEventListener('message', (event) => {
-    const message = event.data || {};
-    if (message.type !== 'dune-addon-request') return;
-    const query = message.payload?.query || '';
-    const entry = { action: message.action, query };
-    window.__bridgeLog.push(entry);
-    let result = { rows: [] };
-    if (message.action === 'database.query' && query.includes("to_regclass('dune_airdrop.config')")) {
-      result = { rows: [{ config_table: 'dune_airdrop.config', playtime_table: 'dune_airdrop.active_playtime', queue_table: 'dune_airdrop.pending_deliveries' }] };
-    }
-    event.source.postMessage({ type: 'dune-addon-response', addonId: message.addonId, requestId: message.requestId, ok: true, result }, '*');
-  });
-</script>`;
+window.__bridgeLog=[];window.__schemaReady=false;window.__stored=null;window.__version=0;
+window.__denyStorage=false;window.__ambiguous=true;window.__delivered=[];
+addEventListener('message', event => {
+ const frame=document.querySelector('iframe');
+ if(event.source!==frame.contentWindow||event.origin!=='null')return;
+ const m=event.data;if(m.type!=='dune-addon-request')return;
+ window.__bridgeLog.push({action:m.action,payload:m.payload});
+ let result={rows:[]},error='';const p=m.payload||{},q=p.query||'';
+ if(m.action==='database.query') {
+  if(q.includes('to_regclass')&&window.__schemaReady)result={rows:[{config_table:'config',playtime_table:'playtime',queue_table:'queue'}]};
+  if(q.includes("ILIKE '%container%'"))result={rows:[{id:'9999999999999',class:'/Game/Chest',owner_account_id:'test-account'}]};
+  if(q.includes('FROM dune.inventories WHERE id ='))result={rows:[{account_id:'test-account'}]};
+ }
+ if(m.action==='database.execute'){result={rowCount:1};if(q.includes('CREATE SCHEMA'))window.__schemaReady=true;}
+ if(m.action==='addon.storage.get')result={found:window.__version>0,value:window.__stored,version:window.__version};
+ if(m.action==='addon.storage.put'){
+  if(window.__denyStorage)error='Storage unavailable';
+  else if(p.expectedVersion!==(window.__version||null))error='Storage changed';
+  else {window.__stored=p.value;result={ok:true,version:++window.__version};}
+ }
+ if(m.action==='admin.items.grant'){
+  if(!window.__delivered.includes(p.requestId))window.__delivered.push(p.requestId);
+  if(window.__ambiguous)error='Bridge request timed out';else result={ok:true};
+ }
+ event.source.postMessage({type:'dune-addon-response',addonId:m.addonId,requestId:m.requestId,ok:!error,result,error},'*');
+});</script>`;
 
 const server = createServer((request, response) => {
-  const url = new URL(request.url, 'http://console.test');
-  if (url.pathname === '/host.html') {
-    response.writeHead(200, { 'content-type': 'text/html', 'set-cookie': 'console_session=approved; SameSite=Strict' });
-    response.end(hostHtml);
-    return;
+  if (request.url === '/favicon.ico') return response.writeHead(204).end();
+  if (request.url === '/host.html') {
+    response.writeHead(200, {'content-type':'text/html','set-cookie':'console_session=synthetic; SameSite=Strict; HttpOnly'});
+    return response.end(hostHtml);
   }
-  if (url.pathname === '/api/addons/installed/dune-airdrop-addon/content/web/index.html') {
-    if (!request.headers.cookie?.includes('console_session=approved')) {
-      response.writeHead(401).end('authentication required');
-      return;
-    }
-    response.writeHead(200, {
-      'content-type': 'text/html',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'"
-    });
-    response.end(entry);
-    return;
+  if (request.url === '/api/addons/installed/dune-airdrop-addon/content/web/index.html') {
+    if (!request.headers.cookie?.includes('console_session=synthetic')) return response.writeHead(401).end();
+    response.writeHead(200, {'content-type':'text/html', 'content-security-policy':
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; frame-ancestors 'self'; sandbox allow-scripts"});
+    return response.end(entry);
   }
-  if (url.pathname.startsWith('/api/addons/installed/dune-airdrop-addon/content/')) {
-    assetRequests.push(url.pathname);
-    response.writeHead(401).end('separate addon assets are unavailable in this sandbox');
-    return;
-  }
-  response.writeHead(404).end('not found');
+  assetRequests.push(request.url); response.writeHead(404).end();
 });
-
-await new Promise((resolveServer) => server.listen(0, '127.0.0.1', resolveServer));
-const port = server.address().port;
-const browser = await chromium.launch({ headless: true });
-
+await new Promise(resolveServer => server.listen(0,'127.0.0.1',resolveServer));
+const browser = await chromium.launch({headless:true,
+  ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? {executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH} : {})});
 try {
-  const page = await browser.newPage();
-  const consoleErrors = [];
-  const failedResponses = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
-  });
-  page.on('response', (response) => {
-    if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() });
-  });
-  page.on('dialog', (dialog) => dialog.accept());
-  await page.goto(`http://127.0.0.1:${port}/host.html`, { waitUntil: 'domcontentloaded' });
-
-  const addon = page.frameLocator('#addon');
-  await addon.locator('#connectionStatusBadge').waitFor({ state: 'visible', timeout: 10000 });
-  const frame = page.frames().find((candidate) => candidate.url().endsWith('/web/index.html'));
-  assert.ok(frame, 'The sandboxed addon frame did not load.');
-  assert.equal(await frame.evaluate(() => typeof window.DuneAddon?.request), 'function');
-
-  await frame.evaluate(() => {
-    window.confirm = () => true;
-    return window.handleInitializeSchema();
-  });
-  await page.waitForTimeout(750);
-  const bridgeLog = await page.evaluate(() => window.__bridgeLog);
-  const schemaRequest = bridgeLog.find((entry) => entry.action === 'database.execute');
-  assert.ok(schemaRequest, `INIT SCHEMA did not reach the parent bridge: ${JSON.stringify(bridgeLog)}`);
-  assert.equal(schemaRequest.query, schema);
-  assert.deepEqual(assetRequests, []);
-  assert.deepEqual(consoleErrors, [], `Browser console errors: ${JSON.stringify({ consoleErrors, failedResponses })}`);
-
-  console.log(JSON.stringify({ assetRequests, bridgeActions: bridgeLog.map((entry) => entry.action), failedResponses }, null, 2));
-} finally {
-  await browser.close();
-  await new Promise((resolveServer) => server.close(resolveServer));
-}
+ const page=await browser.newPage();const errors=[];
+ page.on('pageerror',error=>errors.push(error.message));
+ page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
+ page.on('dialog',()=>{throw new Error('Native dialogs are unavailable in the Console sandbox.');});
+ await page.goto('http://127.0.0.1:'+server.address().port+'/host.html');
+ const addon=page.frameLocator('#addon');
+ await addon.getByText('Setup Required',{exact:true}).waitFor();
+ const frame=()=>page.frames().find(f=>f.url().endsWith('/web/index.html'));
+ assert.equal(await frame().evaluate(()=>{try{void window.localStorage;return false;}catch{return true;}}),true);
+ const countWrites=()=>page.evaluate(()=>__bridgeLog.filter(e=>e.action==='database.execute').length);
+ await addon.getByRole('button',{name:'INIT SCHEMA',exact:true}).click();
+ await addon.getByRole('alertdialog').waitFor();assert.equal(await countWrites(),0);
+ await page.keyboard.press('Escape');assert.equal(await countWrites(),0);
+ await addon.getByRole('button',{name:'INIT SCHEMA',exact:true}).click();
+ await addon.getByRole('alertdialog').getByRole('button',{name:'Continue',exact:true}).click();
+ await addon.getByText('Console Connected',{exact:true}).waitFor();
+ const queries=await page.evaluate(()=>__bridgeLog.filter(e=>e.action==='database.execute'));
+ assert.equal(queries[0].payload.query,schema);
+ await addon.locator('#tabLootBtn').click();
+ await addon.locator('#container-row-9999999999999').click();
+ await addon.locator('#openSpawnModalBtn').click();
+ await addon.locator('#spawnItemTemplateInput').fill('TestSword');
+ await addon.locator('#spawnItemQtyInput').fill('3');
+ await page.evaluate(()=>{__denyStorage=true;});
+ await addon.locator('#spawnItemConfirmBtn').click();
+ await addon.getByText('Spawn request rejected: Storage unavailable',{exact:true}).waitFor();
+ assert.equal(await page.evaluate(()=>__bridgeLog.filter(e=>e.action==='admin.items.grant').length),0);
+ await page.evaluate(()=>{__denyStorage=false;});
+ await addon.locator('#spawnItemConfirmBtn').click();
+ await addon.locator('#spawnItemTemplateInput:disabled').waitFor();
+ const pending=await page.evaluate(()=>__stored);
+ assert.equal(pending.status,'UNCERTAIN');
+ // The Console closes/reopens the iframe from its authenticated parent.
+ // An opaque child initiating its own navigation would drop Strict cookies.
+ await page.evaluate(()=>{
+  const previous=document.querySelector('#addon');
+  previous.replaceWith(previous.cloneNode());
+ });
+ await addon.locator('#spawnItemTemplateInput:disabled').waitFor({state:'attached'});
+ assert.equal(await addon.locator('#spawnItemTemplateInput').inputValue(),'TestSword');
+ await page.evaluate(()=>{__ambiguous=false;});
+ await addon.locator('#tabLootBtn').click();
+ await addon.locator('#openSpawnModalBtn').click();
+ await addon.locator('#spawnItemConfirmBtn').click();
+ await addon.getByText('Successfully spawned 3x TestSword',{exact:true}).waitFor();
+ const grants=await page.evaluate(()=>__bridgeLog.filter(e=>e.action==='admin.items.grant'));
+ assert.equal(grants.length,2);assert.equal(grants[0].payload.requestId,pending.id);
+ assert.equal(grants[1].payload.requestId,pending.id);
+ assert.equal(await page.evaluate(()=>__delivered.length),1);
+ assert.equal(await page.evaluate(()=>__stored),null);
+ for(const operation of ['approve','resolve']) {
+  const before=await countWrites();
+  await frame().evaluate(operation=>{
+   if(operation==='approve')void window.approveHistoricalDelivery('1');
+   else {window.openDeliveryResolution('1');void window.resolveUncertainDelivery('retry');}
+  },operation);
+  await addon.getByRole('alertdialog').waitFor();
+  await addon.getByRole('alertdialog').getByRole('button',{name:'Cancel',exact:true}).click();
+  assert.equal(await countWrites(),before);
+  await frame().evaluate(operation=>{
+   if(operation==='approve')void window.approveHistoricalDelivery('1');
+   else void window.resolveUncertainDelivery('retry');
+  },operation);
+  await addon.getByRole('alertdialog').getByRole('button',{name:'Continue',exact:true}).click();
+  await page.waitForFunction(n=>__bridgeLog.filter(e=>e.action==='database.execute').length===n,before+1);
+ }
+ assert.deepEqual(assetRequests,[]);assert.deepEqual(errors,[]);
+ console.log('PASS: exact Console CSP, opaque-origin storage, confirmations, write failure, reload and idempotent retry.');
+} finally {await browser.close();await new Promise(resolveServer=>server.close(resolveServer));}

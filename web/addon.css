@@ -153,3 +153,18 @@ dd {
 .error {
   color: var(--danger);
 }
+.airdrop-confirm-overlay {
+  position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
+  padding: 1rem; background: rgba(0, 0, 0, .75);
+}
+.airdrop-confirm-dialog {
+  width: min(100%, 32rem); max-height: 90vh; overflow: auto; box-sizing: border-box;
+  padding: 1.5rem; border: 1px solid #475569; border-radius: .75rem;
+  color: #e2e8f0; background: #0f172a; box-shadow: 0 12px 40px rgba(0, 0, 0, .4);
+}
+.airdrop-confirm-dialog h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 1rem; }
+.airdrop-confirm-dialog p { line-height: 1.6; margin: 0 0 1.5rem; }
+.airdrop-confirm-actions { display: flex; justify-content: flex-end; gap: .75rem; }
+.airdrop-confirm-actions button { padding: .6rem 1rem; border: 1px solid #64748b; border-radius: .4rem; cursor: pointer; background: #1e293b; color: #e2e8f0; }
+.airdrop-confirm-actions [data-confirm] { background: #f59e0b; border-color: #f59e0b; color: #020617; }
+.airdrop-confirm-actions button:focus-visible { outline: 2px solid #fbbf24; outline-offset: 3px; }

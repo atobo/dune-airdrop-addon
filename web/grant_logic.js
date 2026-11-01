@@ -1,5 +1,35 @@
 const STORAGE_KEY = 'pending_manual_grant';
 
+// Opaque-origin Console iframes cannot use localStorage. Keep the intent in
+// the existing addon-owned store, with compare-and-swap across tabs/reloads.
+function createBridgeGrantStore(request) {
+  const key = 'manual-grant.pending.v1';
+  let version = null;
+  return {
+    async get() {
+      const result = await request('addon.storage.get', { key });
+      if (!result || typeof result.found !== 'boolean') throw new Error('Manual grant storage is unavailable.');
+      if (result.found && (!Number.isInteger(result.version) || result.version < 1)) throw new Error('Manual grant storage version is invalid.');
+      version = result.found ? result.version : null;
+      if (!result.found || result.value === null) return null;
+      return getStoredGrantState({
+        getItem: () => JSON.stringify(result.value),
+        removeItem: () => { throw new Error('Stored manual grant needs review; no new grant was sent.'); }
+      });
+    },
+    async set(value) {
+      const result = await request('addon.storage.put', { key, value, expectedVersion: version });
+      if (!result?.ok || !Number.isInteger(result.version)) throw new Error('Manual grant state could not be saved.');
+      version = result.version;
+    },
+    async clear() {
+      // Retain a versioned null rather than deleting: versions must not reset
+      // and let an older tab overwrite a newer request (the ABA problem).
+      await this.set(null);
+    }
+  };
+}
+
 function getStoredGrantState(storage) {
   try {
     const raw = storage.getItem(STORAGE_KEY);
@@ -78,11 +108,9 @@ function determineActionAndState(currentState, newPayload, cryptoObj) {
   if (currentState.hash === newHash) {
     return { action: 'PROCEED', newState: currentState };
   } else {
-    const newId = `manual:grant:${cryptoObj.randomUUID()}`;
-    return {
-      action: 'PROCEED',
-      newState: { id: newId, payload: newPayload, hash: newHash, status: 'PENDING' }
-    };
+    // Another tab may still be waiting for this request. Never replace its
+    // only durable ID before a receipt or explicit administrator review.
+    return { action: 'REJECT_UNCERTAIN', newState: currentState };
   }
 }
 
@@ -115,6 +143,7 @@ if (typeof module !== 'undefined') {
     determineActionAndState,
     handleBridgeReceipt,
     handlePermanentRejection,
-    isAmbiguousBridgeError
+    isAmbiguousBridgeError,
+    createBridgeGrantStore
   };
 }

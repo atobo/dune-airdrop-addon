@@ -31,6 +31,7 @@ test('packaged entry works in the Console iframe model without external assets o
       requests.push(message);
       const query = message.payload?.query || '';
       let result = { rows: [] };
+      if (message.action === 'addon.storage.get') result = { found: false, value: null, version: 0 };
       if (message.action === 'database.query' && query.includes("to_regclass('dune_airdrop.config')")) {
         result = { rows: [{
           config_table: 'dune_airdrop.config',
@@ -60,7 +61,6 @@ test('packaged entry works in the Console iframe model without external assets o
     beforeParse(window) {
       windowRef = window;
       Object.defineProperty(window, 'parent', { configurable: true, value: consoleParent });
-      window.confirm = () => true;
       window.fetch = () => { throw new Error('Installed addon CSP blocks fetch.'); };
     }
   });
@@ -73,7 +73,10 @@ test('packaged entry works in the Console iframe model without external assets o
   assert.equal(typeof window.DuneAddon?.request, 'function');
   assert.ok(window.document.querySelector('style'));
 
-  await window.handleInitializeSchema();
+  const initializing = window.handleInitializeSchema();
+  await waitFor(() => window.document.querySelector('[data-confirm]'), 'Confirmation did not open.');
+  window.document.querySelector('[data-confirm]').click();
+  await initializing;
   await waitFor(
     () => requests.some((request) => request.action === 'database.execute'),
     'INIT SCHEMA did not submit SQL through the Console bridge.'

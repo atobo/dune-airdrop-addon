@@ -2,7 +2,7 @@
 
 ![Dune Airdrop Concept Art](assets/dune_airdrop_art.png)
 
-**Version 1.4.2** is a RedBlink Dune Docker Console addon for playtime,
+**Version 1.4.3** is a RedBlink Dune Docker Console addon for playtime,
 daily-login, and weekly-attendance rewards. The console UI manages settings,
 queue review, and recovery approval. A separately deployed companion daemon
 delivers eligible rewards while players are online.
@@ -25,12 +25,14 @@ delivers eligible rewards while players are online.
 1. In Dune Docker Console, install the release ZIP through **Addons**, or have
    the console administrator stage the unpacked addon under
    `runtime/addons/installed/dune-airdrop-addon/`.
-2. Approve `database:read` and `database:write`. Do not grant
+2. Approve `database:read`, `database:write`, and `files:addon-data`. The last
+   permission stores pending manual request IDs in the Console so retries
+   survive iframe reloads without browser storage. Do not grant
    `admin:grant-items` unless manual grants are deliberately enabled.
 3. For an upgrade, stop the existing `airdrop-daemon` first. Do not clear the
    queue, receipts, configuration, or activity tables.
 4. Stop the battlegroup, open **Airdrop Manager**, and select **INIT SCHEMA**.
-   Wait for success before starting the battlegroup and the matching v1.4.2
+   Wait for success before starting the battlegroup and the matching v1.4.3
    daemon image.
 
 Read [Safe upgrade and recovery](docs/upgrade-v2.md) before upgrading an

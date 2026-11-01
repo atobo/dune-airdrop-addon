@@ -45,14 +45,14 @@ test('determineActionAndState: Retains same ID when payload matches (pending sta
   assert.strictEqual(retry.newState.id, initial.newState.id); // Idempotency
 });
 
-test('determineActionAndState: Generates new ID when payload changes (pending state)', () => {
+test('determineActionAndState: Preserves another pending request when payload changes', () => {
   const payload1 = { playerId: '123', itemId: 'Sword', quantity: 1, quality: 0, containerId: '9999999999999' };
   const payload2 = { playerId: '123', itemId: 'Sword', quantity: 2, quality: 0, containerId: '9999999999999' };
   const initial = logic.determineActionAndState(null, payload1, crypto);
   
   const retry = logic.determineActionAndState(initial.newState, payload2, crypto);
-  assert.strictEqual(retry.action, 'PROCEED');
-  assert.notStrictEqual(retry.newState.id, initial.newState.id); // New ID!
+  assert.strictEqual(retry.action, 'REJECT_UNCERTAIN');
+  assert.strictEqual(retry.newState.id, initial.newState.id);
 });
 
 test('determineActionAndState: Rejects changes if state is UNCERTAIN', () => {

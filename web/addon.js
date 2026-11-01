@@ -40,6 +40,38 @@ let activeContainerId = null;
 // Determine if running inside the Dune Docker Console iframe
 const isSandboxMode = window.parent === window;
 
+function confirmAction(message, title = 'Confirm Action') {
+  if (document.getElementById('airdropConfirmation')) return Promise.resolve(false);
+  const previousFocus = document.activeElement;
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.id = 'airdropConfirmation';
+    overlay.className = 'airdrop-confirm-overlay';
+    overlay.innerHTML = '<section role="alertdialog" aria-modal="true" aria-labelledby="airdropConfirmationTitle" aria-describedby="airdropConfirmationMessage" class="airdrop-confirm-dialog"><h2 id="airdropConfirmationTitle"></h2><p id="airdropConfirmationMessage"></p><div class="airdrop-confirm-actions"><button type="button" data-cancel>Cancel</button><button type="button" data-confirm>Continue</button></div></section>';
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = message;
+    const cancel = overlay.querySelector('[data-cancel]');
+    const confirm = overlay.querySelector('[data-confirm]');
+    function finish(accepted) {
+      overlay.remove();
+      if (previousFocus?.isConnected) previousFocus.focus();
+      resolve(accepted);
+    }
+    cancel.addEventListener('click', () => finish(false));
+    confirm.addEventListener('click', () => finish(true));
+    overlay.addEventListener('click', event => { if (event.target === overlay) finish(false); });
+    overlay.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        (document.activeElement === cancel ? confirm : cancel).focus();
+      }
+    });
+    document.body.appendChild(overlay);
+    cancel.focus();
+  });
+}
+
 // --- Initialize Bridge & UI ---
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -79,7 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Wire up the manual spawn modal
-    setupSpawnModal();
+    await setupSpawnModal();
 
     // Wire up tabs
     const settingsTab = document.getElementById('tabSettingsBtn');
@@ -160,7 +192,7 @@ function setupMultipliersSync() {
 }
 
 // --- Spawn Modal Logic ---
-function setupSpawnModal() {
+async function setupSpawnModal() {
   const spawnItemModal = document.getElementById('spawnItemModal');
   const spawnItemCancelBtn = document.getElementById('spawnItemCancelBtn');
   const spawnItemConfirmBtn = document.getElementById('spawnItemConfirmBtn');
@@ -170,6 +202,7 @@ function setupSpawnModal() {
   const validItemTemplates = document.getElementById('validItemTemplates');
   const discardBtn = document.getElementById('spawnItemDiscardBtn');
   const warningText = document.getElementById('spawnItemWarningText');
+  const grantStore = createBridgeGrantStore((action, payload) => window.DuneAddon.request(action, payload));
 
   function updateUncertainStateUI(isUncertain) {
     if (isUncertain) {
@@ -185,8 +218,8 @@ function setupSpawnModal() {
     }
   }
 
-  function handleStateCheck() {
-    const currentState = getStoredGrantState(window.localStorage);
+  async function handleStateCheck() {
+    const currentState = await grantStore.get();
     if (currentState) {
       // Lock inputs to the stored payload
       spawnItemTemplateInput.value = currentState.payload.itemId;
@@ -202,10 +235,17 @@ function setupSpawnModal() {
   }
 
   if (discardBtn) {
-    discardBtn.addEventListener('click', () => {
-      clearStoredGrantState(window.localStorage);
-      updateUncertainStateUI(false);
-      showToast('Uncertain delivery state discarded.', 'success');
+    discardBtn.addEventListener('click', async () => {
+      try {
+        const reviewed = await grantStore.get();
+        if (!reviewed) return;
+        if (!await confirmAction('Discard this pending request only after checking whether it was delivered. A new request can grant the items again.', 'Discard Pending Request')) return;
+        const current = await grantStore.get();
+        if (current?.id !== reviewed.id) throw new Error('The pending request changed. Review it again.');
+        await grantStore.clear();
+        updateUncertainStateUI(false);
+        showToast('Uncertain delivery state discarded.', 'success');
+      } catch (error) { showToast(`Could not discard pending request: ${error.message}`, 'error'); }
     });
   }
 
@@ -243,7 +283,8 @@ function setupSpawnModal() {
     }
 
     if (!skipStateCheck) {
-      handleStateCheck();
+      try { await handleStateCheck(); }
+      catch (error) { showToast(`Manual grant state unavailable: ${error.message}`, 'error'); }
     }
   };
 
@@ -278,6 +319,9 @@ function setupSpawnModal() {
       return;
     }
 
+    let submittedState = null;
+    let bridgeStarted = false;
+    let confirmedReceipt = false;
     try {
       const actId = String(spawnItemTemplateInput.dataset.actId || activeContainerId);
       if (!/^[0-9]+$/.test(actId)) {
@@ -304,29 +348,31 @@ function setupSpawnModal() {
         containerId: actId
       };
 
-      const currentState = getStoredGrantState(window.localStorage);
+      const currentState = await grantStore.get();
       const stateDecision = determineActionAndState(currentState, newPayload, window.crypto);
 
       if (stateDecision.action === 'REJECT_UNCERTAIN') {
-        showToast('A previous delivery is in an uncertain state. You must retry it or discard it first.', 'error');
+        showToast('A previous delivery is pending or uncertain. Retry it or review and discard it first.', 'error');
         spawnItemConfirmBtn.disabled = false;
         spawnItemConfirmBtn.textContent = 'SPAWN';
         return;
       }
 
       // Persist pending/uncertain state before calling bridge
-      setStoredGrantState(stateDecision.newState, window.localStorage);
+      await grantStore.set(stateDecision.newState);
+      submittedState = stateDecision.newState;
 
       const payload = {
         ...stateDecision.newState.payload,
         requestId: stateDecision.newState.id
       };
 
+      bridgeStarted = true;
       const receipt = await window.DuneAddon.request("admin.items.grant", payload);
+      confirmedReceipt = receipt?.ok === true;
 
-      const outcome = handleBridgeReceipt(receipt, stateDecision.newState, window.localStorage);
-
-      if (outcome.success) {
+      if (confirmedReceipt) {
+        await grantStore.clear();
         showToast(`Successfully spawned ${qNum}x ${templateId}`, 'success');
         updateUncertainStateUI(false);
         if (window.selectContainer) {
@@ -334,20 +380,26 @@ function setupSpawnModal() {
         }
         spawnItemModal.classList.add('hidden');
       } else {
-        throw new Error(outcome.message);
+        throw new Error('Delivery outcome uncertain. Retained request ID.');
       }
     } catch (err) {
-      if (isAmbiguousBridgeError(err)) {
+      if (bridgeStarted && (isAmbiguousBridgeError(err) || confirmedReceipt)) {
         showToast(`Failed to spawn item: ${err.message}`, 'error');
-        const currentState = getStoredGrantState(window.localStorage);
-        if (currentState) {
-          currentState.status = 'UNCERTAIN';
-          setStoredGrantState(currentState, window.localStorage);
-        }
-        handleStateCheck();
+        try {
+          const currentState = await grantStore.get();
+          if (currentState?.id === submittedState.id) {
+            currentState.status = 'UNCERTAIN';
+            await grantStore.set(currentState);
+          }
+          await handleStateCheck();
+        } catch (storageError) { showToast('Pending request retained. Reopen the addon to review it before sending another grant.', 'warning'); }
       } else {
-        handlePermanentRejection(null, window.localStorage);
-        updateUncertainStateUI(false);
+        if (bridgeStarted) {
+          try {
+            const currentState = await grantStore.get();
+            if (currentState?.id === submittedState.id) await grantStore.clear();
+          } catch (storageError) { showToast('Pending request retained for review.', 'warning'); }
+        }
         showToast(`Spawn request rejected: ${err.message}`, 'error');
       }
     } finally {
@@ -359,7 +411,11 @@ function setupSpawnModal() {
   const commonItems = ['ScrapMetal', 'CopperOre', 'IronOre', 'FlourSand', 'PlantFiber', 'Basalt', 'DolomiteRock', 'Silicone', 'WaterCanister', 'SpiceMelange'];
   validItemTemplates.innerHTML = commonItems.map(item => `<option value="${item}"></option>`).join('');
 
-  handleStateCheck();
+  try { await handleStateCheck(); }
+  catch (error) {
+    spawnItemConfirmBtn.disabled = true;
+    showToast(`Manual grants unavailable: ${error.message}`, 'warning');
+  }
 }
 
 
@@ -557,7 +613,7 @@ async function handleInitializeSchema() {
     return;
   }
 
-  const confirmed = window.confirm(
+  const confirmed = await confirmAction(
     'Stop the battlegroup before initializing or upgrading Airdrop Manager. ' +
     'This briefly replaces its player-state trigger. Continue now?'
   );
@@ -732,7 +788,7 @@ async function fetchDeliverySummary() {
 
 window.approveHistoricalDelivery = async function(id) {
   if (!/^\d+$/.test(String(id))) return;
-  if (!window.confirm('Approve this one historical reward only after confirming it was never delivered? Uncertain deliveries must not be approved.')) return;
+  if (!await confirmAction('Approve this one historical reward only after confirming it was never delivered? Uncertain deliveries must not be approved.', 'Approve Historical Reward')) return;
   try {
     const result = await window.DuneAddon.request('database.execute', { query: `WITH approved AS (UPDATE dune_airdrop.pending_deliveries SET requires_recovery_approval = false, recovery_approved_at = NOW(), updated_at = NOW() WHERE id = ${id}::int AND delivery_state = 'WAITING_FOR_PLAYER' AND requires_recovery_approval = true RETURNING id) INSERT INTO dune_airdrop.delivery_events (delivery_id, state, detail) SELECT id, 'WAITING_FOR_PLAYER', 'Historical recovery approved by administrator.' FROM approved;` });
     if (Number(result?.rowCount || 0) !== 1) throw new Error('Reward is no longer eligible for recovery approval. Refresh and review its current state.');
@@ -767,7 +823,7 @@ window.resolveUncertainDelivery = async function(action) {
   const id = selectedDeliveryId;
   if (!id || !['delivered', 'retry', 'archive'].includes(action)) return;
   const descriptions = { delivered: 'confirm this reward was delivered', retry: 'confirm this reward was not delivered and authorize one retry', archive: 'archive this reward from the active queue' };
-  if (!window.confirm(`This will ${descriptions[action]}. It cannot be undone from the active queue. Continue?`)) return;
+  if (!await confirmAction(`This will ${descriptions[action]}. It cannot be undone from the active queue. Continue?`, 'Resolve Uncertain Delivery')) return;
   const statements = {
     delivered: `WITH changed AS (UPDATE dune_airdrop.pending_deliveries SET delivery_state='DELIVERED', is_applied=true, resolution_status='CONFIRMED_DELIVERED', resolution_note='Administrator confirmed delivered.', resolved_at=NOW(), locked_at=NULL, next_attempt_at=NULL, updated_at=NOW() WHERE id=${id}::int AND delivery_state='UNCERTAIN' AND resolution_status IS NULL RETURNING id, request_id), receipt AS (UPDATE dune_airdrop.delivery_receipts r SET status='SUCCESS', status_updated_at=NOW(), failure_reason='Administrator confirmed delivery after investigation.' FROM changed WHERE r.request_id=changed.request_id) INSERT INTO dune_airdrop.delivery_events (delivery_id,state,detail) SELECT id,'DELIVERED','Administrator confirmed delivered after investigation.' FROM changed;`,
     retry: `WITH changed AS (UPDATE dune_airdrop.pending_deliveries SET delivery_state='WAITING_FOR_PLAYER', requires_recovery_approval=false, recovery_approved_at=NOW(), resolution_status=NULL, resolution_note=NULL, resolved_at=NULL, locked_at=NULL, next_attempt_at=NOW(), last_error_code=NULL, last_error_at=NULL, updated_at=NOW() WHERE id=${id}::int AND delivery_state='UNCERTAIN' AND resolution_status IS NULL RETURNING id, request_id), receipt AS (UPDATE dune_airdrop.delivery_receipts r SET status='WAITING_FOR_PLAYER', status_updated_at=NOW(), failure_reason='Administrator confirmed prior delivery did not occur; retry authorized.' FROM changed WHERE r.request_id=changed.request_id) INSERT INTO dune_airdrop.delivery_events (delivery_id,state,detail) SELECT id,'WAITING_FOR_PLAYER','Administrator confirmed undelivered; controlled retry authorized.' FROM changed;`,

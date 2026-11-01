@@ -5,6 +5,20 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 const crypto = require('crypto');
 
+function storageBridge(initial = null) {
+  let value = initial;
+  let version = initial ? 1 : 0;
+  return (action, payload) => {
+    if (action === 'addon.storage.get') return { found: version > 0, version, value };
+    if (action === 'addon.storage.put') {
+      assert.equal(payload.expectedVersion, version || null);
+      value = payload.value;
+      return { ok: true, version: ++version };
+    }
+    return undefined;
+  };
+}
+
 async function waitFor(predicate, message, timeoutMs = 1500) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -14,7 +28,7 @@ async function waitFor(predicate, message, timeoutMs = 1500) {
   assert.fail(message);
 }
 
-test('UI Integration - Full Container Selection and Grant Workflow', async () => {
+test('UI Integration - Full Container Selection and Grant Workflow', async (t) => {
   // Load HTML and Scripts
   const htmlPath = path.resolve(__dirname, '../web/index.template.html');
   const html = fs.readFileSync(htmlPath, 'utf-8');
@@ -30,6 +44,7 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   const dom = new JSDOM(combinedHtml, { runScripts: "dangerously", url: "http://localhost/" });
   const window = dom.window;
   const document = window.document;
+  t.after(() => dom.window.close());
 
   // Mock crypto and localStorage
   window.crypto = { randomUUID: () => crypto.randomUUID() };
@@ -41,9 +56,12 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   };
 
   let queriesReceived = [];
+  const storage = storageBridge();
   window.DuneAddon = {
     request: async (action, payload) => {
       queriesReceived.push({ action, payload });
+      const stored = storage(action, payload);
+      if (stored) return stored;
       if (action === 'database.query') {
         if (payload.query.includes("to_regclass('dune_airdrop.config')")) {
           return { rows: [{
@@ -134,7 +152,7 @@ test('UI Integration - Full Container Selection and Grant Workflow', async () =>
   if (window.__fetchPendingInterval) clearInterval(window.__fetchPendingInterval);
 });
 
-test('UI Integration - Clean install prompts for schema initialization', async () => {
+test('UI Integration - Clean install prompts for schema initialization', async (t) => {
   const html = fs.readFileSync(path.resolve(__dirname, '../web/index.template.html'), 'utf-8');
   const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
   const addonSrc = fs.readFileSync(path.resolve(__dirname, '../web/addon.js'), 'utf-8');
@@ -142,6 +160,7 @@ test('UI Integration - Clean install prompts for schema initialization', async (
   const combinedHtml = html.replace('</body>', `<script>${grantLogicSrc}</script><script>${addonSrcModified}</script></body>`);
   const dom = new JSDOM(combinedHtml, { runScripts: 'dangerously', url: 'http://localhost/' });
   const window = dom.window;
+  t.after(() => dom.window.close());
   const queries = [];
 
   window.DuneAddon = {
@@ -161,13 +180,13 @@ test('UI Integration - Clean install prompts for schema initialization', async (
   );
 
   assert.equal(window.document.getElementById('connectionStatusBadge').textContent, 'Setup Required');
-  assert.ok(queries.some((entry) => entry.payload.query.includes("to_regclass('dune_airdrop.config')")));
-  assert.ok(!queries.some((entry) => entry.payload.query.includes("config_key = 'airdrop_multipliers'")));
+  assert.ok(queries.some((entry) => entry.payload.query?.includes("to_regclass('dune_airdrop.config')")));
+  assert.ok(!queries.some((entry) => entry.payload.query?.includes("config_key = 'airdrop_multipliers'")));
   assert.equal(window.__fetchDiagnosticsInterval, undefined);
   assert.equal(window.__fetchPendingInterval, undefined);
 });
 
-test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
+test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async (t) => {
   const htmlPath = path.resolve(__dirname, '../web/index.template.html');
   const html = fs.readFileSync(htmlPath, 'utf-8');
   const grantLogicSrc = fs.readFileSync(path.resolve(__dirname, '../web/grant_logic.js'), 'utf-8');
@@ -179,6 +198,7 @@ test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
   const dom = new JSDOM(combinedHtml, { runScripts: "dangerously", url: "http://localhost/" });
   const window = dom.window;
   const document = window.document;
+  t.after(() => dom.window.close());
 
   window.crypto = { randomUUID: () => 'test-uuid-123' };
   
@@ -190,10 +210,12 @@ test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
     payload: { playerId: "12345", itemId: "TestSword", quantity: 3, quality: 0, containerId: "9999999999999" }
   };
   
-  window.localStorage.setItem('pending_manual_grant', JSON.stringify(unresolvedState));
+  const storage = storageBridge(unresolvedState);
 
   window.DuneAddon = {
     request: async (action, payload) => {
+      const stored = storage(action, payload);
+      if (stored) return stored;
       if (action === 'database.query') {
         if (payload.query.includes("to_regclass('dune_airdrop.config')")) {
           return { rows: [{
@@ -231,13 +253,14 @@ test('UI Integration - Recovery paths (PENDING / UNCERTAIN)', async () => {
   
   // Discard the state
   discardBtn.click();
+  await waitFor(() => document.querySelector('[data-confirm]'), 'Discard confirmation did not open');
+  document.querySelector('[data-confirm]').click();
   await new Promise(r => setTimeout(r, 50));
   
-  assert.strictEqual(window.localStorage.getItem('pending_manual_grant'), null, 'State should be cleared');
+  assert.strictEqual(storage('addon.storage.get', {}).value, null, 'State should be cleared');
   assert.strictEqual(spawnItemTemplateInput.disabled, false, 'Template input should be enabled after discard');
   assert.strictEqual(spawnItemQtyInput.disabled, false, 'Qty input should be enabled after discard');
 
   if (window.__fetchDiagnosticsInterval) clearInterval(window.__fetchDiagnosticsInterval);
   if (window.__fetchPendingInterval) clearInterval(window.__fetchPendingInterval);
-  setTimeout(() => process.exit(0), 100);
 });
